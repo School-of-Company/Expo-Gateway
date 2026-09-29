@@ -6,6 +6,7 @@ import {
   type EurekaInstance,
 } from '@school-of-company/nestjs-eureka';
 import { AppModule } from '../../src/app.module';
+import { GATEWAY_APP_OPTIONS } from '../../src/bootstrap/app-options';
 import {
   setGatewayConfig,
   resetGatewayConfigForTests,
@@ -38,7 +39,7 @@ export async function createTestApp(
     .useValue(fakeEurekaService)
     .compile();
 
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication(GATEWAY_APP_OPTIONS);
   await app.init();
   return app;
 }

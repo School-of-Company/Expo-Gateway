@@ -17,6 +17,32 @@ const GATEWAY_OWNED_PATHS = ['/health'];
 
 @Controller()
 export class ProxyController {
+  // One long-lived proxy: http-proxy-middleware registers a `close` listener
+  // on the HTTP server per instance, so creating one per request leaks
+  // listeners and memory. The per-request target is handed over via this map.
+  private readonly targets = new WeakMap<object, string>();
+
+  private readonly proxy = createProxyMiddleware({
+    changeOrigin: true,
+    router: (req) => {
+      const target = this.targets.get(req);
+      if (!target) {
+        throw new Error('Proxy target was not resolved for this request');
+      }
+      return target;
+    },
+    on: {
+      error: (_err, _req, res) => {
+        if ('writeHead' in res && !res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+        }
+        if ('end' in res) {
+          res.end(JSON.stringify({ message: 'Bad Gateway' }));
+        }
+      },
+    },
+  });
+
   constructor(
     private readonly routeResolver: RouteResolverService,
     private readonly loadBalancer: LoadBalancerService,
@@ -60,21 +86,7 @@ export class ProxyController {
       throw err;
     }
 
-    const proxy = createProxyMiddleware({
-      target: targetUrl,
-      changeOrigin: true,
-      on: {
-        error: (_err, _req, res) => {
-          if ('writeHead' in res && !res.headersSent) {
-            res.writeHead(502, { 'Content-Type': 'application/json' });
-          }
-          if ('end' in res) {
-            res.end(JSON.stringify({ message: 'Bad Gateway' }));
-          }
-        },
-      },
-    });
-
-    await proxy(req, res, next);
+    this.targets.set(req, targetUrl);
+    await this.proxy(req, res, next);
   }
 }

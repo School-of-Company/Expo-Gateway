@@ -1,4 +1,5 @@
 import { runBootstrap } from './run';
+import { GATEWAY_APP_OPTIONS } from './app-options';
 import { fetchGatewayConfig } from './fetch-gateway-config';
 import { resetGatewayConfigForTests } from './gateway-config-holder';
 import { NestFactory } from '@nestjs/core';
@@ -57,7 +58,10 @@ describe('runBootstrap', () => {
     await runBootstrap(exit);
 
     expect(exit).not.toHaveBeenCalled();
-    expect(mockedCreate).toHaveBeenCalled();
+    expect(mockedCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      GATEWAY_APP_OPTIONS,
+    );
     expect(fakeApp.enableShutdownHooks).toHaveBeenCalled();
     expect(fakeApp.listen).toHaveBeenCalledWith(3000);
   });
