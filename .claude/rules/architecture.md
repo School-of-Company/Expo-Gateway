@@ -58,8 +58,8 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 - `config/gateway-config.service.ts`: the only place other code should read config from. Typed
   getters, not a raw config object passthrough.
 - `config/gateway-config.defaults.ts`: fallback values used **only** when the Config Server payload
-  omits `routing`/`rateLimit` specifically. `jwt.publicKey` and `eureka.serviceUrl` have no safe
-  fallback and always fail boot validation if missing — do not add defaults for them.
+  omits `rateLimit` specifically. `jwt.publicKey`, `eureka.serviceUrl`, and `routing.prefixes` have
+  no safe fallback and always fail boot validation if missing — do not add defaults for them.
 - `eureka/eureka-client.module.ts`: the **only** place `EurekaModule.forRootAsync()` may be called.
   Calling it more than once starts a second, independent registration/heartbeat loop (the
   library's own behavior, not this repo's). Any module needing `EurekaService` imports
@@ -80,7 +80,7 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 
 | Situation | Status |
 |---|---|
-| No path prefix matches `routing.prefixes` | not an error — falls back to `routing.default` |
+| No path prefix matches `routing.prefixes` | 404 — there is no catch-all service |
 | Zero `UP` instances for the resolved Eureka app | 503 (`NoHealthyInstanceError`) |
 | `EurekaService.getInstances()` itself throws | 502 (`EurekaLookupError`) |
 | Instance reachable per Eureka but connection fails at actual proxy time | 502 (`on.error` hook) |

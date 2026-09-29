@@ -63,8 +63,8 @@ Client → Gateway
   ThrottlerGuard (IP-based, 429 on exceed)
   → JwtAuthGuard (public path? skip : verify RS256, 401 on failure)
   → ProxyController (@All('/{*splat}'))
-      → RouteResolverService: path prefix → Eureka app name (config-driven, longest-prefix-wins,
-                                             falls back to routing.default)
+      → RouteResolverService: path prefix → Eureka app name (config-driven, longest-prefix-wins;
+                                             no matching prefix → 404)
       → LoadBalancerService: getInstances(appName) → filter UP → round-robin
                               (no healthy instance → 503, lookup itself fails → 502)
       → http-proxy-middleware streams the request to the chosen instance
@@ -173,11 +173,11 @@ process — no retry, matching every other service in this MSA.
 
 ## Cross-Repo Follow-Ups (not this repo's job, but blocking a real deployment)
 
-- `Expo-Config-Server` needs a `configs/gateway-{profile}.yml` matching the shape documented in
-  `.claude/rules/architecture.md` / the gateway PR description (`jwt.publicKey`,
-  `eureka.serviceUrl`, `routing.default`/`routing.prefixes`, `rateLimit`, `publicPaths`)
-- The JWT public key needs to be duplicated into Vault under a path this gateway's Config Server
-  request will pick up (signing stays with `expo-expo-server`'s `/auth`)
-- `Expo-Application-Server`/`Expo-Report-Server` have no controllers implemented yet, so their real
-  path prefixes are unconfirmed — the in-repo default routing table only maps `/v1/forms` and
-  `/v1/surveys` (confirmed from `Expo-Form-Server`'s actual code) to `expo-form-server`
+- `Expo-Config-Server`: `configs/gateway-local.yml` is added; `gateway-dev.yml` / `gateway-prod.yml`
+  still need environment-specific Eureka URLs (`eureka.serviceUrl`) before those profiles can boot
+- The JWT public key (the pair of the Auth service's signing key) needs to be in Vault under
+  `secret/gateway` as `{"jwt": {"publicKey": "..."}}` — the Config Server deep-merges it in
+- The routing table in `gateway-{profile}.yml` is the only place a service prefix lives. Eureka app
+  names other than `expo-expo-server`, `expo-form-server`, `expo-application-server`,
+  `expo-report-server` are inferred from the `expo-{name}-server` pattern and unconfirmed. A path
+  with no matching prefix gets a 404 — there is no catch-all service
