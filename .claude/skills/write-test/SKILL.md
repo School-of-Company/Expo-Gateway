@@ -58,7 +58,7 @@ const app = await createTestApp({
   eurekaInstances: [instance({ ipAddr: '127.0.0.1', port: stubPort })],
 });
 
-const res = await request(getHttpServer(app)).get('/v1/forms/123');
+const res = await request(getHttpServer(app)).get('/forms/123');
 ```
 
 - For proxy tests, spin up a real `http.createServer(...)` on an ephemeral port as the stub
@@ -76,6 +76,6 @@ const res = await request(getHttpServer(app)).get('/v1/forms/123');
 - Always test the failure paths, not just the happy path: no healthy instance (503), Eureka lookup
   failure (502), missing/expired/invalid/alg-confused JWT (401), rate limit exceeded (429), config
   fetch failure at boot (`exit(1)`, `NestFactory.create` never called).
-- When testing route resolution with overlapping prefixes (e.g. `/v1/forms` and
-  `/v1/forms/special`), assert the longest-prefix-wins case specifically — a test with only
+- When testing route resolution with overlapping prefixes (e.g. `/forms` and
+  `/forms/special`), assert the longest-prefix-wins case specifically — a test with only
   non-overlapping prefixes doesn't prove that logic works.

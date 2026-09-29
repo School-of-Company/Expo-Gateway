@@ -9,7 +9,7 @@
    `GatewayConfig` (`src/bootstrap/gateway-config.types.ts`), validate it in
    `parseGatewayConfig` (`src/bootstrap/gateway-config.validate.ts`), expose a typed getter on
    `GatewayConfigService`, and add an in-repo default in `gateway-config.defaults.ts` only if the
-   field has a genuinely safe fallback (routing/rate-limit — not a key or a discovery URL).
+   field has a genuinely safe fallback (rate-limit — not a key, a discovery URL, or the routing table).
 4. **Implement as a pure function where possible** — anything that doesn't need DI
    (`route-resolver`'s prefix-matching logic, `eureka-options.factory`, `public-path.matcher`)
    should be a plain exported function, unit-testable without Nest.

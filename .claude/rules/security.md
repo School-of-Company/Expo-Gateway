@@ -21,7 +21,7 @@
   with `alg: none`, or HS256 using the RS256 public key as an HMAC secret, would otherwise validate.
   Any new or modified verify call must keep this pinned.
 - This gateway only ever verifies. There is no signing key anywhere in this codebase, and there
-  should never be one — token issuance is `expo-expo-server`'s `/auth` responsibility.
+  should never be one — token issuance is the Auth service's responsibility.
 
 ## Environment Variable Management
 

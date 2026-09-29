@@ -35,7 +35,7 @@ const app = await createTestApp({
   eurekaInstances: [instance({ ipAddr: '127.0.0.1', port: stubPort })],
 });
 
-const res = await request(getHttpServer(app)).get('/v1/forms/123');
+const res = await request(getHttpServer(app)).get('/forms/123');
 ```
 
 `createTestApp` (in `test/support/gateway-test-app.ts`) sets the required instance env vars, seeds

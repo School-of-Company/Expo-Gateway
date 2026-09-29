@@ -50,8 +50,8 @@
 - Routing table, JWT public key, rate-limit thresholds, and the public-path bypass list must come
   from the boot-time Config Server payload (`GatewayConfigService`), not be hardcoded in a
   controller/guard/service. `src/config/gateway-config.defaults.ts` is the only place a fallback
-  constant belongs, and only for fields that have a genuinely safe default (routing, rate limit —
-  not `jwt.publicKey` or `eureka.serviceUrl`).
+  constant belongs, and only for fields that have a genuinely safe default (rate limit — not
+  `jwt.publicKey`, `eureka.serviceUrl`, or `routing.prefixes`).
 
 **ESM/CJS**
 - A new or upgraded dependency that ships pure ESM (`"type": "module"`, no CJS `main`) breaks
