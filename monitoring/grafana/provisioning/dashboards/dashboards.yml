@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: expo-gateway
+    folder: Expo Gateway
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

@@ -31,6 +31,13 @@ Reviews the local diff. Focuses on real risks; minimizes style feedback.
 - `process.env` read outside `src/bootstrap/env.ts`
 - JWTs, keys, or the Config Server response body logged
 
+**Metrics**
+- A new metric label with unbounded values (raw path, user id, token, query string)
+- `gateway_upstream_healthy_instances` written anywhere other than `UpstreamHealthPoller`, or the
+  poller touching `gateway_eureka_lookup_*`
+- `/metrics` exposed on the public listener, or `METRICS_HOST` defaulting to `0.0.0.0`
+- A metrics/poller failure that can throw into the request path or stop the gateway
+
 **Missing tests**
 - New guard/service/controller without tests
 - Route-resolution test using only non-overlapping prefixes (doesn't prove longest-prefix-wins)
