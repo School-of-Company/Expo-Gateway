@@ -154,9 +154,9 @@ process — no retry, matching every other service in this MSA.
 - Never log a JWT, a public/private key, or the Config Server response body
 - Always pin `algorithms: ['RS256']` on `jwt.verify` — omitting it is an alg-confusion vulnerability
 - Never hardcode a JWT key, Eureka URL, or Config Server URL
-- `JwtAuthGuard` deletes any client-supplied `X-User-Id` first, then sets it from the verified
-  token's `sub` — never let a client-supplied value through, and don't forward other claims as
-  headers without a design decision
+- `JwtAuthGuard` deletes any client-supplied `X-User-Id` / `X-User-Role` first, then sets them from
+  the verified token's `sub` / `role` — never let a client-supplied value through, and don't forward
+  other claims as headers without a design decision
 
 ## Architecture Rules Summary
 
