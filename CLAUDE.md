@@ -31,6 +31,10 @@ npm run lint             # eslint
 
 # Run
 npm run start:dev
+
+# Local monitoring (Prometheus + Grafana)
+docker compose up -d      # Grafana http://127.0.0.1:3001, Prometheus http://127.0.0.1:9090
+docker compose down       # never add -v (volumes keep the dashboards' history)
 ```
 
 ---
@@ -47,8 +51,12 @@ expo-gateway/
 │   ├── config/                       # GATEWAY_CONFIG token + GatewayConfigService (typed getters)
 │   ├── eureka/                       # Eureka options factory + single-registration wrapper module
 │   ├── auth/                         # JWT (RS256) verify-only guard + public-path matching
-│   ├── proxy/                        # Catch-all controller, route resolution, load balancing
+│   ├── proxy/                        # Catch-all controller, route resolution, load balancing,
+│   │                                 # request-metrics middleware, background Eureka poller
+│   ├── metrics/                      # MetricsService (prom-client) + separate-port /metrics server
 │   └── health/                       # GET /health only
+├── monitoring/                       # Prometheus config + alert rules, Grafana provisioning + dashboard
+├── docker-compose.yml                # Prometheus + Grafana (gateway itself runs on the host)
 └── test/
     ├── support/gateway-test-app.ts   # e2e helper: seeds config singleton, overrides EurekaService
     └── *.e2e-spec.ts
@@ -73,6 +81,25 @@ Boot: bootstrap/run.ts fetches GET /configs/gateway/:profile from expo-config-se
 NestFactory.create(); any failure (network error, or the Config Server's own 404/503) exits the
 process — no retry, matching every other service in this MSA.
 ```
+
+---
+
+## Monitoring
+
+- Metrics are served by `src/metrics/metrics.server.ts` on a **separate listener** (`METRICS_HOST`,
+  default `127.0.0.1`; `METRICS_PORT`, default `9464`), never on the public port, so they bypass
+  JWT, the rate limiter, and the catch-all proxy and can't leak through the public interface.
+- Request metrics are recorded by `HttpMetricsMiddleware`, which runs before the guards (401/429 are
+  measured too; a client that disconnects early is recorded as 499). The label set is deliberately
+  small: `method`, `status`/`status_class`, `app` (routed Eureka app, or `unmatched` / `gateway`).
+- `gateway_upstream_healthy_instances` is written only by `UpstreamHealthPoller` (every 10s, so it
+  stays fresh with no traffic). **It is Eureka's view, not proof of reachability**: a killed
+  instance (SIGKILL/OOM/host down) is never deregistered and stays `UP` until its lease expires
+  (default 90s + eviction), while requests to it fail with 502. That is why there is a
+  `GatewayUpstream502Rate` alert besides `GatewayNoHealthyInstances`.
+- Poll load on Eureka: one lookup per routed app every 10s (16 services ≈ 1.6 req/s), separate
+  from the per-request lookup measured by `gateway_eureka_lookup_duration_seconds`.
+- A failing metrics server or poller only logs; it never takes the gateway down.
 
 ---
 
@@ -152,6 +179,8 @@ process — no retry, matching every other service in this MSA.
 > Full rules: `.claude/rules/security.md`
 
 - Never log a JWT, a public/private key, or the Config Server response body
+- Metrics stay on their own listener (loopback by default) and never carry tokens, keys, user ids,
+  or raw paths
 - Always pin `algorithms: ['RS256']` on `jwt.verify` — omitting it is an alg-confusion vulnerability
 - Never hardcode a JWT key, Eureka URL, or Config Server URL
 - `JwtAuthGuard` deletes any client-supplied `X-User-Id` first, then sets it from the verified
@@ -168,6 +197,8 @@ process — no retry, matching every other service in this MSA.
   it from each other is a circular require that makes `@Inject()` silently capture `undefined`
 - `EurekaModule.forRootAsync()` must be called exactly once (`eureka-client.module.ts`) — a second
   call starts an independent registration/heartbeat loop
+- Metric labels must stay low-cardinality (never a raw path or user id); only the poller writes the
+  UP-instances gauge; observability failures are logged, never fatal
 - Check `npm view <pkg> type` before adding a dependency — pure ESM breaks this project's CJS build
 
 ---
