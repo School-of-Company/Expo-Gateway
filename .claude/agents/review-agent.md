@@ -25,8 +25,8 @@ Reviews the local diff. Focuses on real risks; minimizes style feedback.
 
 **Security (gateway-specific)**
 - JWT verification missing an explicit `algorithms: ['RS256']` (alg-confusion risk)
-- Decoded JWT claims forwarded to backends as custom headers (out of scope for v1 — see
-  `.claude/rules/security.md`)
+- `X-User-Id` not deleted at the start of `JwtAuthGuard.canActivate` (client could spoof identity),
+  or any other decoded JWT claim forwarded as a custom header (see `.claude/rules/security.md`)
 - Hardcoded JWT keys, Eureka URLs, or Config Server URLs
 - `process.env` read outside `src/bootstrap/env.ts`
 - JWTs, keys, or the Config Server response body logged

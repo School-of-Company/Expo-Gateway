@@ -27,9 +27,15 @@ describe('Auth (e2e)', () => {
   let stubPort: number;
 
   beforeAll((done) => {
-    stub = http.createServer((_req, res) => {
+    stub = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ from: 'stub' }));
+      res.end(
+        JSON.stringify({
+          from: 'stub',
+          xUserId: req.headers['x-user-id'] ?? null,
+          authorization: req.headers['authorization'] ?? null,
+        }),
+      );
     });
     stub.listen(0, '127.0.0.1', () => {
       stubPort = (stub.address() as AddressInfo).port;
@@ -79,5 +85,43 @@ describe('Auth (e2e)', () => {
   it('allows a configured public path without a token', async () => {
     const res = await request(getHttpServer(app)).get('/auth/login');
     expect(res.status).toBe(200);
+  });
+  describe('X-User-Id forwarding', () => {
+    type Echo = { xUserId: string | null; authorization: string | null };
+    const signToken = () =>
+      jwt.sign({ sub: 'user-1' }, privateKeyPem, {
+        algorithm: 'RS256',
+        expiresIn: '5m',
+      });
+
+    it('forwards the token subject as x-user-id and keeps Authorization', async () => {
+      const token = signToken();
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body as Echo).toEqual(
+        expect.objectContaining({
+          xUserId: 'user-1',
+          authorization: `Bearer ${token}`,
+        }),
+      );
+    });
+
+    it('replaces a spoofed x-user-id with the token subject', async () => {
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set('Authorization', `Bearer ${signToken()}`)
+        .set('X-User-Id', 'attacker');
+      expect((res.body as Echo).xUserId).toBe('user-1');
+    });
+
+    it('does not forward a spoofed x-user-id on a public path', async () => {
+      const res = await request(getHttpServer(app))
+        .get('/auth/login')
+        .set('X-User-Id', 'attacker');
+      expect(res.status).toBe(200);
+      expect((res.body as Echo).xUserId).toBeNull();
+    });
   });
 });
