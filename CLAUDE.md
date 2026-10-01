@@ -56,6 +56,7 @@ expo-gateway/
 │   ├── metrics/                      # MetricsService (prom-client) + separate-port /metrics server
 │   └── health/                       # GET /health only
 ├── monitoring/                       # Prometheus config + alert rules, Grafana provisioning + dashboard
+├── load-test/                        # k6 + stub backends/Eureka/Config + orchestrator (see its README)
 ├── docker-compose.yml                # Prometheus + Grafana (gateway itself runs on the host)
 └── test/
     ├── support/gateway-test-app.ts   # e2e helper: seeds config singleton, overrides EurekaService
@@ -100,6 +101,19 @@ process — no retry, matching every other service in this MSA.
 - Poll load on Eureka: one lookup per routed app every 10s (16 services ≈ 1.6 req/s), separate
   from the per-request lookup measured by `gateway_eureka_lookup_duration_seconds`.
 - A failing metrics server or poller only logs; it never takes the gateway down.
+
+---
+
+## Load test (`load-test/`)
+
+- `node load-test/run.mjs run --target local --fast` validates the harness on this machine (stub
+  Eureka, `--fast` timings are never reportable). Reportable numbers come from `--target ssh`
+  (staging server, real Eureka, CPU-pinned k6/gateway). Read `load-test/README.md` first.
+- Staging server rules: only `bench-gw-*` containers and `~/bench/gateway`; teardown is
+  `docker compose -p bench-gw down` only; **never** `docker volume prune` / `docker system prune` /
+  any server-wide prune; publish ports on `127.0.0.1` only; no host package installs.
+- `load-test/` is excluded from `tsconfig.build.json`. If it were compiled by `nest build`, `dist/`
+  would gain a `src/` level and `node dist/main` would break.
 
 ---
 
