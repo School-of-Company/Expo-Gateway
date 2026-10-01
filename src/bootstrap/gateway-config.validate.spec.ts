@@ -81,6 +81,24 @@ describe('parseGatewayConfig', () => {
     ).toThrow(InvalidGatewayConfigError);
   });
 
+  it('accepts "METHOD /path" entries in publicPaths', () => {
+    expect(() =>
+      parseGatewayConfig({
+        ...valid,
+        publicPaths: ['/health', 'POST /auth', 'PATCH /auth'],
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects a malformed "METHOD /path" entry in publicPaths', () => {
+    expect(() =>
+      parseGatewayConfig({ ...valid, publicPaths: ['post /auth'] }),
+    ).toThrow(InvalidGatewayConfigError);
+    expect(() =>
+      parseGatewayConfig({ ...valid, publicPaths: ['POST auth'] }),
+    ).toThrow(InvalidGatewayConfigError);
+  });
+
   it('accepts a full payload with routing, rateLimit, and publicPaths', () => {
     expect(() =>
       parseGatewayConfig({

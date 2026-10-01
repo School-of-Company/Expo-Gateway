@@ -22,6 +22,10 @@ export interface GatewayConfig {
   eureka: EurekaSharedConfig;
   routing: RoutingConfig;
   rateLimit?: RateLimitConfig;
+  /**
+   * `"/path"` (any method, prefix match) or `"METHOD /path"` (that method and
+   * that exact path only). See `auth/public-path.matcher.ts`.
+   */
   publicPaths?: string[];
 }
 
