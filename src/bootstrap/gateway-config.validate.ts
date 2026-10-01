@@ -1,3 +1,4 @@
+import { isValidPublicPathEntry } from '../auth/public-path.matcher';
 import type { GatewayConfig } from './gateway-config.types';
 
 export class InvalidGatewayConfigError extends Error {
@@ -77,10 +78,12 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
   if (candidate.publicPaths !== undefined) {
     if (
       !Array.isArray(candidate.publicPaths) ||
-      !candidate.publicPaths.every(isNonEmptyString)
+      !candidate.publicPaths.every(
+        (entry) => isNonEmptyString(entry) && isValidPublicPathEntry(entry),
+      )
     ) {
       throw new InvalidGatewayConfigError(
-        'publicPaths must be an array of strings',
+        'publicPaths must be an array of "/prefix" or "METHOD /path" strings',
       );
     }
   }

@@ -28,7 +28,14 @@ export class GatewayConfigService {
   }
 
   getPublicPaths(): string[] {
-    return this.config.publicPaths ?? ['/auth', '/health'];
+    return (
+      this.config.publicPaths ?? [
+        '/health',
+        'POST /auth',
+        'POST /auth/signin',
+        'PATCH /auth',
+      ]
+    );
   }
 
   getPort(): number | undefined {

@@ -50,6 +50,15 @@ controllers read config through `GatewayConfigService`, never `process.env` dire
   missing `X-User-Id` as unauthenticated.
 - The original `Authorization` header is still forwarded unmodified.
 
+## Public Paths
+
+- `publicPaths` entries are `"/path"` (any method, prefix match) or `"METHOD /path"` (that method and
+  that exact path only). Prefer the method-qualified form: it opens one endpoint, so a protected
+  endpoint added under the same prefix later does not become public by accident.
+- A path can mix public and protected methods (e.g. `POST /auth` public, `DELETE /auth` protected).
+  The protected method goes through normal verification and receives `X-User-Id`.
+- A malformed entry (unknown or lowercase method, stray whitespace) fails config validation at boot.
+
 ## Proxying
 
 - Do not strip, rewrite, or duplicate the `Authorization` header — backends still receive it as-is.

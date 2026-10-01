@@ -17,8 +17,9 @@ const privateKeyPem = privateKey
 function makeContext(
   path: string,
   headers: Record<string, string>,
+  method = 'GET',
 ): ExecutionContext {
-  const request = { path, headers };
+  const request = { path, headers, method };
   return {
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
@@ -36,6 +37,30 @@ describe('JwtAuthGuard', () => {
   it('allows a public path through without a token', () => {
     const guard = makeGuard(['/auth']);
     expect(guard.canActivate(makeContext('/auth/login', {}))).toBe(true);
+  });
+
+  it('lets only the listed method through on a "METHOD /path" public entry', () => {
+    const guard = makeGuard(['POST /auth', 'PATCH /auth']);
+    expect(guard.canActivate(makeContext('/auth', {}, 'POST'))).toBe(true);
+    expect(guard.canActivate(makeContext('/auth', {}, 'PATCH'))).toBe(true);
+    expect(() => guard.canActivate(makeContext('/auth', {}, 'DELETE'))).toThrow(
+      UnauthorizedException,
+    );
+  });
+
+  it('identifies the caller on a protected method of a path that has public methods', () => {
+    const guard = makeGuard(['POST /auth']);
+    const token = jwt.sign({ sub: 'user-1' }, privateKeyPem, {
+      algorithm: 'RS256',
+      expiresIn: '5m',
+    });
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${token}`,
+    };
+    expect(guard.canActivate(makeContext('/auth', headers, 'DELETE'))).toBe(
+      true,
+    );
+    expect(headers['x-user-id']).toBe('user-1');
   });
 
   it('rejects a protected path with no Authorization header', () => {
