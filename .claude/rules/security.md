@@ -8,11 +8,10 @@
 - Hardcoding a JWT key, Eureka URL, or Config Server URL in code — these come from
   `GatewayConfigService`/`src/bootstrap/env.ts` only
 - Committing a real PEM key or `.p8`/`.pem` file into this repo
-- Forwarding decoded JWT claims to backend services as custom headers (e.g. `X-User-Id`) — v1's
-  design assumes each backend service independently re-verifies the JWT with the same shared
-  public key; only the original `Authorization` header is passed through unmodified. If this needs
-  to change, treat it as a real design decision, not an incidental addition — flag it for design
-  review rather than adding it inline.
+- Letting a client-supplied `X-User-Id` reach a backend — only `JwtAuthGuard` may set it, from a
+  verified token
+- Forwarding any other decoded JWT claim to backends as a custom header — `X-User-Id` is the only
+  identity header; adding more is a design decision, not an incidental addition
 
 ## JWT Verification
 
@@ -39,11 +38,21 @@ controllers read config through `GatewayConfigService`, never `process.env` dire
   must fail the boot (`process.exit(1)`) — never fall back to a stale or hardcoded config for
   `jwt.publicKey` or `eureka.serviceUrl`.
 
+## Identity Header (`X-User-Id`)
+
+- `JwtAuthGuard` deletes any incoming `X-User-Id` at the very start of every request (public paths
+  included), then sets it from the verified token's `sub` claim (`src/auth/user-id.ts`). This is
+  what stops a client from impersonating a user by sending the header itself — do not move the
+  deletion after the public-path check or make it conditional.
+- A token that verifies but has no usable `sub` is rejected with 401, never forwarded without an
+  identity.
+- Public paths never get `X-User-Id` (no verification happens there). Backends must treat a
+  missing `X-User-Id` as unauthenticated.
+- The original `Authorization` header is still forwarded unmodified.
+
 ## Proxying
 
-- The gateway forwards the original `Authorization` header unmodified — do not strip, rewrite, or
-  duplicate it into another header without a deliberate design reason (see Strictly Forbidden
-  above).
+- Do not strip, rewrite, or duplicate the `Authorization` header — backends still receive it as-is.
 - Do not log full request/response bodies passing through the proxy in production — they may
   contain participant PII (this is a public-facing registration system).
 

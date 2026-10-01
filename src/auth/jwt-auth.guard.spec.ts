@@ -103,4 +103,54 @@ describe('JwtAuthGuard', () => {
       ),
     ).toThrow(UnauthorizedException);
   });
+  describe('X-User-Id', () => {
+    function signToken(claims: Record<string, unknown>): string {
+      return jwt.sign(claims, privateKeyPem, {
+        algorithm: 'RS256',
+        expiresIn: '5m',
+      });
+    }
+
+    it('sets x-user-id from the verified token subject', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 'user-1' })}`,
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-id']).toBe('user-1');
+    });
+
+    it('stringifies a numeric subject', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 42 })}`,
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-id']).toBe('42');
+    });
+
+    it('overwrites a client-supplied x-user-id with the token subject', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 'user-1' })}`,
+        'x-user-id': 'attacker',
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-id']).toBe('user-1');
+    });
+
+    it('strips a client-supplied x-user-id on a public path', () => {
+      const headers: Record<string, string> = { 'x-user-id': 'attacker' };
+      makeGuard(['/auth']).canActivate(makeContext('/auth/login', headers));
+      expect(headers['x-user-id']).toBeUndefined();
+    });
+
+    it('rejects a valid token that has no subject', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ role: 'admin' })}`,
+        'x-user-id': 'attacker',
+      };
+      expect(() =>
+        makeGuard([]).canActivate(makeContext('/forms', headers)),
+      ).toThrow(UnauthorizedException);
+      expect(headers['x-user-id']).toBeUndefined();
+    });
+  });
 });

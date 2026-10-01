@@ -65,6 +65,8 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
   library's own behavior, not this repo's). Any module needing `EurekaService` imports
   `EurekaClientModule`, which re-exports it — see the file's own doc comment for why a plain
   (non-dynamic) wrapper module solves the "imported from multiple places, registered once" problem.
+- `auth/user-id.ts`: the `X-User-Id` header name and which JWT claim (`sub`) it comes from — change
+  the claim here only, in one place. `jwt-auth.guard.ts` is the only code that sets the header.
 - `auth/jwt-verify.ts`: verify-only, always pins `algorithms: ['RS256']` explicitly. Never add a
   sign function here — this gateway never issues tokens.
 - `proxy/route-resolver.service.ts`: pure prefix-matching logic (longest prefix wins), reads the
