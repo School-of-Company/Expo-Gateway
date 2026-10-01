@@ -1,0 +1,14 @@
+# Staging override (4 vCPU, amd64): real Eureka server and CPU isolation.
+#   k6 = core 3, gateway = core 1, everything else = cores 0 and 2.
+# Core 0 absorbs most hardware interrupts and sshd, so it is not given to the
+# gateway. Used together with load-test/docker-compose.yml.
+services:
+  eureka: { cpuset: "0,2" }
+  config: { cpuset: "0,2" }
+  backend-a: { cpuset: "0,2" }
+  backend-b: { cpuset: "0,2" }
+  backend-c: { cpuset: "0,2" }
+  gateway: { cpuset: "1" }
+  prometheus: { cpuset: "0,2" }
+  grafana: { cpuset: "0,2" }
+  k6: { cpuset: "3" }

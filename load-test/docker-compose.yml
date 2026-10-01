@@ -1,0 +1,151 @@
+# Load-test environment. Run through load-test/run.mjs (project name bench-gw);
+# every container is named bench-gw-* so it is easy to recognise and clean up.
+#
+# Eureka is one of two profiles: `stub-eureka` (local, arm64) or `real-eureka`
+# (staging, amd64). Nothing publishes a port except Prometheus and Grafana,
+# and those only on loopback.
+name: bench-gw
+
+x-app: &app
+  image: bench-gw-app:local
+  pull_policy: never
+  restart: "no"
+
+# The container's main process is a long sleep and node runs under it, so
+# killing node simulates a crashed process on a live host (the port refuses
+# at once; the IP stays reachable) instead of the whole host disappearing.
+# `docker exec -d ... node ...` brings it back. The pid file lets the
+# orchestrator signal exactly the node process. ($$ escapes compose's own
+# interpolation.)
+x-backend-cmd: &backend-cmd
+  - sh
+  - -c
+  - node load-test/.tmp/stub-backend/main.js & echo $$! > /tmp/node.pid; wait; exec sleep infinity
+
+x-backend-env: &backend-env
+  EUREKA_URL: http://eureka:8761/eureka
+  PORT: "4000"
+  LATENCY_MS: ${BACKEND_LATENCY_MS:-20}
+  JITTER_MS: ${BACKEND_JITTER_MS:-10}
+  HEARTBEAT_SECONDS: ${HEARTBEAT_SECONDS:-30}
+  LEASE_SECONDS: ${LEASE_SECONDS:-90}
+
+services:
+  eureka-stub:
+    <<: *app
+    profiles: [stub-eureka]
+    container_name: bench-gw-eureka
+    command: ["node", "load-test/stub-eureka.mjs"]
+    environment:
+      EVICTION_MS: ${EUREKA_EVICTION_MS:-60000}
+      CACHE_MS: ${EUREKA_CACHE_MS:-30000}
+    networks:
+      default:
+        aliases: [eureka]
+
+  eureka:
+    # Pinned by digest: the image is old (Java 8, Spring Boot 1.x) and `latest`
+    # may move.
+    image: ${EUREKA_IMAGE:-steeltoeoss/eurekaserver@sha256:35214871a2be721c776d3577454bdd5f90b8e02a25fdf1b481393664c9e6c5ef}
+    profiles: [real-eureka]
+    container_name: bench-gw-eureka
+    restart: "no"
+    environment:
+      EUREKA_CLIENT_REGISTERWITHEUREKA: "false"
+      EUREKA_CLIENT_FETCHREGISTRY: "false"
+      # Netflix Eureka 1.x defaults spelled out so a run records them.
+      # Self-preservation is off by default: on a cluster this small it stops
+      # eviction entirely, which would hide the lease-expiry behaviour that the
+      # SIGKILL scenario measures. Set EUREKA_SELF_PRESERVATION=true to see that.
+      SPRING_APPLICATION_JSON: '{"eureka":{"server":{"enableSelfPreservation":${EUREKA_SELF_PRESERVATION:-false},"evictionIntervalTimerInMs":60000,"responseCacheUpdateIntervalMs":30000}}}'
+    networks:
+      default:
+        aliases: [eureka]
+
+  config:
+    <<: *app
+    container_name: bench-gw-config
+    command: ["node", "load-test/stub-config-server.mjs"]
+    environment:
+      EUREKA_URL: http://eureka:8761/eureka
+      PUBLIC_KEY_FILE: /keys/public.pem
+    volumes:
+      - ./.tmp/keys:/keys:ro
+
+  backend-a:
+    <<: *app
+    container_name: bench-gw-backend-a
+    command: *backend-cmd
+    environment: { <<: *backend-env, APP_NAME: svc-a, HOST_NAME: backend-a }
+
+  backend-b:
+    <<: *app
+    container_name: bench-gw-backend-b
+    command: *backend-cmd
+    environment: { <<: *backend-env, APP_NAME: svc-b, HOST_NAME: backend-b }
+
+  backend-c:
+    <<: *app
+    container_name: bench-gw-backend-c
+    command: *backend-cmd
+    environment: { <<: *backend-env, APP_NAME: svc-c, HOST_NAME: backend-c }
+
+  gateway:
+    <<: *app
+    build:
+      context: ..
+      dockerfile: load-test/Dockerfile
+    container_name: bench-gw-gateway
+    command: ["node", "dist/main"]
+    environment:
+      CONFIG_SERVER_URL: http://config:8888
+      PROFILE: loadtest
+      INSTANCE_HOSTNAME: gateway
+      INSTANCE_IP_ADDR: gateway
+      PORT: "3000"
+      # Inside the compose network and not published, so binding all
+      # interfaces here does not expose the metrics port outside.
+      METRICS_HOST: 0.0.0.0
+      METRICS_PORT: "9464"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: bench-gw-prometheus
+    restart: "no"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ../monitoring/prometheus/prometheus.loadtest.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    # No volume: nothing to clean up afterwards. The data is lost on `down`,
+    # so capture dashboards before tearing the stack down.
+    tmpfs:
+      - /prometheus:mode=1777
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: bench-gw-grafana
+    restart: "no"
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    tmpfs:
+      - /var/lib/grafana:mode=1777
+
+  k6:
+    image: grafana/k6:1.4.2
+    profiles: [run]
+    restart: "no"
+    entrypoint: ["k6"]
+    volumes:
+      - ./k6:/scripts:ro
+      - ./results:/results
