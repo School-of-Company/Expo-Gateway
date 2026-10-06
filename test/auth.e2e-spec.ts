@@ -33,6 +33,7 @@ describe('Auth (e2e)', () => {
         JSON.stringify({
           from: 'stub',
           xUserId: req.headers['x-user-id'] ?? null,
+          xUserRole: req.headers['x-user-role'] ?? null,
           authorization: req.headers['authorization'] ?? null,
         }),
       );
@@ -122,6 +123,51 @@ describe('Auth (e2e)', () => {
         .set('X-User-Id', 'attacker');
       expect(res.status).toBe(200);
       expect((res.body as Echo).xUserId).toBeNull();
+    });
+  });
+
+  describe('X-User-Role forwarding', () => {
+    type Echo = { xUserRole: string | null };
+    const signToken = (claims: Record<string, unknown>) =>
+      jwt.sign(claims, privateKeyPem, { algorithm: 'RS256', expiresIn: '5m' });
+
+    it('forwards the token role claim as x-user-role', async () => {
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set(
+          'Authorization',
+          `Bearer ${signToken({ sub: 'user-1', role: 'ROLE_ADMIN' })}`,
+        );
+      expect(res.status).toBe(200);
+      expect((res.body as Echo).xUserRole).toBe('ROLE_ADMIN');
+    });
+
+    it('replaces a spoofed x-user-role with the token role', async () => {
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set(
+          'Authorization',
+          `Bearer ${signToken({ sub: 'user-1', role: 'ROLE_STANDARD' })}`,
+        )
+        .set('X-User-Role', 'ROLE_ADMIN');
+      expect((res.body as Echo).xUserRole).toBe('ROLE_STANDARD');
+    });
+
+    it('drops a spoofed x-user-role when the token has no role', async () => {
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set('Authorization', `Bearer ${signToken({ sub: 'user-1' })}`)
+        .set('X-User-Role', 'ROLE_ADMIN');
+      expect(res.status).toBe(200);
+      expect((res.body as Echo).xUserRole).toBeNull();
+    });
+
+    it('does not forward a spoofed x-user-role on a public path', async () => {
+      const res = await request(getHttpServer(app))
+        .get('/auth/login')
+        .set('X-User-Role', 'ROLE_ADMIN');
+      expect(res.status).toBe(200);
+      expect((res.body as Echo).xUserRole).toBeNull();
     });
   });
 });
