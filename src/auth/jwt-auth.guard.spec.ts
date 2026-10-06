@@ -178,4 +178,65 @@ describe('JwtAuthGuard', () => {
       expect(headers['x-user-id']).toBeUndefined();
     });
   });
+
+  describe('X-User-Role', () => {
+    function signToken(claims: Record<string, unknown>): string {
+      return jwt.sign(claims, privateKeyPem, {
+        algorithm: 'RS256',
+        expiresIn: '5m',
+      });
+    }
+
+    it('sets x-user-role from the verified token role claim', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 'user-1', role: 'ROLE_ADMIN' })}`,
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-role']).toBe('ROLE_ADMIN');
+    });
+
+    it('overwrites a client-supplied x-user-role with the token role', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 'user-1', role: 'ROLE_STANDARD' })}`,
+        'x-user-role': 'ROLE_ADMIN',
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-role']).toBe('ROLE_STANDARD');
+    });
+
+    it('removes a client-supplied x-user-role when the token has no role claim', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 'user-1' })}`,
+        'x-user-role': 'ROLE_ADMIN',
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-id']).toBe('user-1');
+      expect(headers['x-user-role']).toBeUndefined();
+    });
+
+    it('does not forward a role value that is not a plain role name', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ sub: 'user-1', role: 'ROLE_ADMIN\r\nX-Evil: 1' })}`,
+      };
+      makeGuard([]).canActivate(makeContext('/forms', headers));
+      expect(headers['x-user-role']).toBeUndefined();
+    });
+
+    it('strips a client-supplied x-user-role on a public path', () => {
+      const headers: Record<string, string> = { 'x-user-role': 'ROLE_ADMIN' };
+      makeGuard(['/auth']).canActivate(makeContext('/auth/login', headers));
+      expect(headers['x-user-role']).toBeUndefined();
+    });
+
+    it('strips x-user-role when a token with a role but no subject is rejected', () => {
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${signToken({ role: 'ROLE_ADMIN' })}`,
+        'x-user-role': 'ROLE_ADMIN',
+      };
+      expect(() =>
+        makeGuard([]).canActivate(makeContext('/forms', headers)),
+      ).toThrow(UnauthorizedException);
+      expect(headers['x-user-role']).toBeUndefined();
+    });
+  });
 });

@@ -9,6 +9,7 @@ import { GatewayConfigService } from '../config/gateway-config.service';
 import { isPublicPath } from './public-path.matcher';
 import { verifyAccessToken } from './jwt-verify';
 import { extractUserId, USER_ID_HEADER } from './user-id';
+import { extractUserRole, USER_ROLE_HEADER } from './user-role';
 
 /**
  * Global guard (registered as APP_GUARD in AppModule). There are no
@@ -17,9 +18,10 @@ import { extractUserId, USER_ID_HEADER } from './user-id';
  * from boot-time config (`publicPaths`) and is matched against the request
  * path directly.
  *
- * Identity is handed to backends as `X-User-Id`, taken from the verified
- * token. Any client-supplied `X-User-Id` is removed first on every request
- * (public paths included), so only this guard can ever set it.
+ * Identity is handed to backends as `X-User-Id` (and, when the token carries
+ * one, `X-User-Role`), taken from the verified token. Any client-supplied
+ * value of either header is removed first on every request (public paths
+ * included), so only this guard can ever set them.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -29,6 +31,7 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
 
     delete request.headers[USER_ID_HEADER];
+    delete request.headers[USER_ROLE_HEADER];
 
     if (
       isPublicPath(
@@ -47,10 +50,14 @@ export class JwtAuthGuard implements CanActivate {
 
     const token = header.slice('Bearer '.length);
     let userId: string | undefined;
+    let role: string | undefined;
     try {
-      userId = extractUserId(
-        verifyAccessToken(token, this.gatewayConfig.getJwtPublicKey()),
+      const payload = verifyAccessToken(
+        token,
+        this.gatewayConfig.getJwtPublicKey(),
       );
+      userId = extractUserId(payload);
+      role = extractUserRole(payload);
     } catch {
       throw new UnauthorizedException();
     }
@@ -59,6 +66,9 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     request.headers[USER_ID_HEADER] = userId;
+    if (role) {
+      request.headers[USER_ROLE_HEADER] = role;
+    }
     return true;
   }
 }
