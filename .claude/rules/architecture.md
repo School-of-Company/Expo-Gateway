@@ -8,7 +8,9 @@ src/
 ├── config/        — Turns the fetched config into a DI-graph value (GATEWAY_CONFIG / GatewayConfigService).
 ├── eureka/        — Eureka registration options + the single-registration wrapper module.
 ├── auth/          — JWT (RS256) verify-only guard + public-path matching. No signing, ever.
-├── proxy/         — The catch-all controller, route resolution, load balancing/instance selection.
+├── proxy/         — The catch-all controller, route resolution, load balancing/instance selection,
+│                    request-metrics middleware, background Eureka poller.
+├── metrics/       — MetricsService (prom-client registry) + the separate-port /metrics server.
 └── health/        — GET /health only. Nothing else belongs here.
 ```
 
@@ -79,6 +81,29 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 - `proxy/proxy.controller.ts`: the single catch-all route. Any gateway-owned endpoint (currently
   just `/health`) must be listed in `GATEWAY_OWNED_PATHS` and explicitly fall through via `next()`
   — Nest's controller/module registration order is not something to depend on for this.
+
+## Metrics
+
+- `metrics/metrics.server.ts` serves `GET /metrics` on its **own listener** (`METRICS_HOST` /
+  `METRICS_PORT`, read only in `bootstrap/env.ts`). Never add `/metrics` to the public listener or
+  to `GATEWAY_OWNED_PATHS` — the point is that it can't be reached through the gateway.
+- `MetricsService` owns an instance-level `Registry` (not prom-client's global one) so tests can
+  create many instances. Metric definitions live there and nowhere else.
+- **Labels must stay low-cardinality**: `method` (standard verbs, else `OTHER`), `status`,
+  `status_class`, `app`. Never put a raw path, user id, token, or any unbounded value in a label.
+  `app` is the routed Eureka app name, `unmatched`, or `gateway`.
+- `proxy/http-metrics.middleware.ts` records requests before the guards run so 401/429 are
+  measured; it uses `req.originalUrl` (not `req.path`, which depends on where Nest mounts the
+  middleware). Client aborts (`close` without a finished response) are recorded as 499.
+- `gateway_upstream_healthy_instances` has a **single writer**, `UpstreamHealthPoller`. The request
+  path (`LoadBalancerService`) only records `gateway_eureka_lookup_*`, and the poller must never
+  touch those — mixing them would distort the per-request lookup cost. A failed poll drops the
+  series (no stale value), counts `gateway_upstream_poll_failures_total`, and logs.
+- Observability failures never take the gateway down: a metrics server that cannot bind or a
+  poller error is logged and ignored. (A malformed `METRICS_*` value is a config error and fails
+  fast at boot, like any other env var.)
+- `UP` in Eureka is not reachability. A crashed instance stays `UP` until its lease expires, so
+  alert on 502 rate as well as on the UP count.
 
 ## Error Contract
 
