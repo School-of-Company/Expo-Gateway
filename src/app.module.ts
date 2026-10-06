@@ -8,12 +8,14 @@ import {
 import type { GatewayConfig } from './bootstrap/gateway-config.types';
 import { DEFAULT_RATE_LIMIT } from './config/gateway-config.defaults';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { MetricsModule } from './metrics/metrics.module';
 import { ProxyModule } from './proxy/proxy.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
     GatewayConfigModule.forRoot(),
+    MetricsModule,
     ThrottlerModule.forRootAsync({
       inject: [GATEWAY_CONFIG],
       useFactory: (config: GatewayConfig) => [

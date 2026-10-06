@@ -27,3 +27,28 @@ export function readInstanceEnv() {
     port: Number(process.env.PORT) || 3000,
   };
 }
+
+export interface MetricsBind {
+  host: string;
+  port: number;
+}
+
+/**
+ * The metrics listener is separate from the public one. It defaults to
+ * loopback so a gateway started directly on a VM doesn't expose it on an
+ * external interface; set METRICS_HOST to a private interface IP (or 0.0.0.0
+ * behind a firewall / inside a private container network) when a scraper
+ * can't reach loopback.
+ */
+export function readMetricsBind(): MetricsBind {
+  const host = process.env.METRICS_HOST ?? '127.0.0.1';
+  if (host.trim() === '') {
+    throw new Error('Invalid METRICS_HOST: must not be empty');
+  }
+  const rawPort = process.env.METRICS_PORT ?? '9464';
+  const port = Number(rawPort);
+  if (!/^\d+$/.test(rawPort) || port > 65535) {
+    throw new Error(`Invalid METRICS_PORT: ${rawPort}`);
+  }
+  return { host, port };
+}

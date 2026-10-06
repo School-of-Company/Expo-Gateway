@@ -51,6 +51,19 @@ controllers read config through `GatewayConfigService`, never `process.env` dire
   missing `X-User-Id` as unauthenticated.
 - The original `Authorization` header is still forwarded unmodified.
 
+## Metrics
+
+- The metrics listener is separate from the public one and binds `METRICS_HOST` (default
+  `127.0.0.1`). Do not default it to `0.0.0.0`: a gateway started directly on a VM would expose it
+  on an external interface.
+- Trade-off to keep documented: a Prometheus running in Docker on **Linux** cannot reach a
+  loopback-bound port through `host-gateway`. Set `METRICS_HOST` to a private interface IP (or
+  `0.0.0.0` behind a firewall / inside a private container network where the port is not published).
+  Docker Desktop (macOS/Windows) reaches loopback through `host.docker.internal`.
+- Never put a JWT, key, user id, or raw request path in a metric label or HELP text.
+- The local Grafana and Prometheus are published on `127.0.0.1` only; `GRAFANA_ADMIN_PASSWORD` is
+  for local use and must not be reused anywhere real.
+
 ## Role Header (`X-User-Role`)
 
 - Same rule as `X-User-Id`: `JwtAuthGuard` deletes any incoming `X-User-Role` at the very start of
