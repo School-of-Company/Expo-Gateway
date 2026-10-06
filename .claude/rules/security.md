@@ -8,10 +8,11 @@
 - Hardcoding a JWT key, Eureka URL, or Config Server URL in code — these come from
   `GatewayConfigService`/`src/bootstrap/env.ts` only
 - Committing a real PEM key or `.p8`/`.pem` file into this repo
-- Letting a client-supplied `X-User-Id` reach a backend — only `JwtAuthGuard` may set it, from a
-  verified token
-- Forwarding any other decoded JWT claim to backends as a custom header — `X-User-Id` is the only
-  identity header; adding more is a design decision, not an incidental addition
+- Letting a client-supplied `X-User-Id` or `X-User-Role` reach a backend — only `JwtAuthGuard` may
+  set them, from a verified token
+- Forwarding any other decoded JWT claim to backends as a custom header — `X-User-Id` and
+  `X-User-Role` are the only identity headers; adding more is a design decision, not an incidental
+  addition
 
 ## JWT Verification
 
@@ -62,6 +63,17 @@ controllers read config through `GatewayConfigService`, never `process.env` dire
 - Never put a JWT, key, user id, or raw request path in a metric label or HELP text.
 - The local Grafana and Prometheus are published on `127.0.0.1` only; `GRAFANA_ADMIN_PASSWORD` is
   for local use and must not be reused anywhere real.
+
+## Role Header (`X-User-Role`)
+
+- Same rule as `X-User-Id`: `JwtAuthGuard` deletes any incoming `X-User-Role` at the very start of
+  every request (public paths included) and only then sets it from the verified token's `role`
+  claim (`src/auth/user-role.ts`).
+- A token without a usable `role` is still accepted — the header is simply absent. Backends must
+  treat a missing `X-User-Role` as "no role", never as a default role.
+- The value is forwarded only if it is a plain role name (`[A-Za-z0-9_.:-]`, max 64 chars); anything
+  else is dropped so a crafted claim cannot inject header content.
+- The role is the one baked into the token at issue time; a role change takes effect after re-login.
 
 ## Proxying
 
