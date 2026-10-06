@@ -100,6 +100,10 @@ process — no retry, matching every other service in this MSA.
 - Poll load on Eureka: one lookup per routed app every 10s (16 services ≈ 1.6 req/s), separate
   from the per-request lookup measured by `gateway_eureka_lookup_duration_seconds`.
 - A failing metrics server or poller only logs; it never takes the gateway down.
+- The Eureka registration carries Expo-Monitoring's scrape metadata (`prometheus.scrape`,
+  `prometheus.port` = `METRICS_PORT`, `prometheus.path` = `/metrics`) so the shared Prometheus
+  discovers the gateway. It is only advertised when `METRICS_HOST` is the registered
+  `INSTANCE_IP_ADDR` or all interfaces, because Prometheus scrapes `ipAddr:prometheus.port`.
 
 ---
 
