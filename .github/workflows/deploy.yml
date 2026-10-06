@@ -26,9 +26,17 @@ jobs:
           node-version: '26'
           cache: npm
 
+      - name: Install
+        run: npm ci
+
+      # 테스트가 실패하면 업로드 전에 멈춘다.
+      - name: Test
+        run: |
+          npm test
+          npm run test:e2e
+
       - name: Build
         run: |
-          npm ci
           npm run build
           npm prune --omit=dev
 
