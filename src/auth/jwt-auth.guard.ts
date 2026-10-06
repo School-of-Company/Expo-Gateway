@@ -33,7 +33,13 @@ export class JwtAuthGuard implements CanActivate {
     delete request.headers[USER_ID_HEADER];
     delete request.headers[USER_ROLE_HEADER];
 
-    if (isPublicPath(request.path, this.gatewayConfig.getPublicPaths())) {
+    if (
+      isPublicPath(
+        request.path,
+        this.gatewayConfig.getPublicPaths(),
+        request.method,
+      )
+    ) {
       return true;
     }
 

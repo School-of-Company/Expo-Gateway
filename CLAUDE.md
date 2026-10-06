@@ -69,7 +69,7 @@ expo-gateway/
 ```
 Client → Gateway
   ThrottlerGuard (IP-based, 429 on exceed)
-  → JwtAuthGuard (public path? skip : verify RS256, 401 on failure)
+  → JwtAuthGuard (public method+path? skip : verify RS256, 401 on failure)
   → ProxyController (@All('/{*splat}'))
       → RouteResolverService: path prefix → Eureka app name (config-driven, longest-prefix-wins;
                                              no matching prefix → 404)
