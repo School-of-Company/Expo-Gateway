@@ -87,6 +87,13 @@ process — no retry, matching every other service in this MSA.
 
 ## Monitoring
 
+- `METRICS_ENABLED=false` disables the metrics listener and Eureka scrape metadata (default `true`).
+  Bootstrap starts the listener before creating Nest, and only passes a successful bind to Eureka.
+  Registration includes string `prometheus.scrape=true`, `prometheus.port`, and `prometheus.path=/metrics`
+  when the bind matches `INSTANCE_IP_ADDR` or is a compatible wildcard (`0.0.0.0` for IPv4, `::` for dual stack).
+  Mismatched binds and ephemeral port `0` omit metadata. Dev uses port `18206`; prod uses `18106`.
+  Prometheus must reach the registered IP from its network namespace; verify targets after deployment.
+
 - Metrics are served by `src/metrics/metrics.server.ts` on a **separate listener** (`METRICS_HOST`,
   default `127.0.0.1`; `METRICS_PORT`, default `9464`), never on the public port, so they bypass
   JWT, the rate limiter, and the catch-all proxy and can't leak through the public interface.

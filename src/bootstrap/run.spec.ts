@@ -4,6 +4,8 @@ import { fetchGatewayConfig } from './fetch-gateway-config';
 import { resetGatewayConfigForTests } from './gateway-config-holder';
 import { NestFactory } from '@nestjs/core';
 import { startMetricsServer } from '../metrics/metrics.server';
+import { MetricsService } from '../metrics/metrics.service';
+import { getMetricsRuntime, setMetricsRuntime } from './metrics-runtime-holder';
 
 jest.mock('./fetch-gateway-config');
 jest.mock('../metrics/metrics.server');
@@ -49,14 +51,17 @@ describe('runBootstrap', () => {
     delete process.env.PORT;
     delete process.env.METRICS_HOST;
     delete process.env.METRICS_PORT;
+    delete process.env.METRICS_ENABLED;
     mockedFetch.mockReset();
     mockedCreate.mockReset();
     mockedStartMetrics.mockReset();
     resetGatewayConfigForTests();
+    setMetricsRuntime(undefined);
   });
 
   afterAll(() => {
     process.env = originalEnv;
+    setMetricsRuntime(undefined);
   });
 
   it('exits with code 1 and never calls NestFactory.create when the config fetch fails', async () => {
@@ -94,9 +99,16 @@ describe('runBootstrap', () => {
     expect(app.enableShutdownHooks).toHaveBeenCalled();
     expect(app.listen).toHaveBeenCalledWith(3000);
     expect(mockedStartMetrics).toHaveBeenCalledWith(
-      { metrics: true },
+      expect.any(MetricsService),
       9464,
       '127.0.0.1',
+    );
+    expect(getMetricsRuntime()?.bind).toEqual({
+      host: '127.0.0.1',
+      port: 9464,
+    });
+    expect(mockedStartMetrics.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedCreate.mock.invocationCallOrder[0],
     );
 
     const onClose = publicServer.once.mock.calls[0] as [string, () => void];
@@ -116,5 +128,33 @@ describe('runBootstrap', () => {
 
     expect(exit).not.toHaveBeenCalled();
     expect(app.listen).toHaveBeenCalled();
+    expect(getMetricsRuntime()?.bind).toBeUndefined();
+  });
+
+  it('does not start a metrics listener when disabled', async () => {
+    process.env.METRICS_ENABLED = 'false';
+    mockedFetch.mockResolvedValue(validConfig);
+    const { app } = makeFakeApp();
+    mockedCreate.mockResolvedValue(app);
+
+    await runBootstrap(jest.fn());
+
+    expect(app.listen).toHaveBeenCalled();
+    expect(mockedStartMetrics).not.toHaveBeenCalled();
+    expect(getMetricsRuntime()?.bind).toBeUndefined();
+  });
+
+  it('closes metrics and clears registration state when application startup fails', async () => {
+    mockedFetch.mockResolvedValue(validConfig);
+    const { app } = makeFakeApp();
+    app.listen.mockRejectedValue(new Error('Eureka unavailable'));
+    mockedCreate.mockResolvedValue(app);
+    const metricsServer = { close: jest.fn() };
+    mockedStartMetrics.mockResolvedValue(metricsServer as never);
+
+    await expect(runBootstrap(jest.fn())).rejects.toThrow('Eureka unavailable');
+
+    expect(metricsServer.close).toHaveBeenCalled();
+    expect(getMetricsRuntime()).toBeUndefined();
   });
 });

@@ -8,15 +8,17 @@ import { fetchGatewayConfig } from './fetch-gateway-config';
 import { setGatewayConfig } from './gateway-config-holder';
 import { MetricsService } from '../metrics/metrics.service';
 import { startMetricsServer } from '../metrics/metrics.server';
-import { readBootEnv, readMetricsBind } from './env';
+import { readBootEnv, readMetricsBind, readMetricsEnabled } from './env';
 import type { GatewayConfig } from './gateway-config.types';
+import { setMetricsRuntime } from './metrics-runtime-holder';
 
 export async function runBootstrap(
   exit: (code: number) => void = (code) => process.exit(code),
 ): Promise<void> {
   const logger = new Logger('Bootstrap');
   const env = readBootEnv();
-  const metricsBind = readMetricsBind();
+  const metricsBind = readMetricsEnabled() ? readMetricsBind() : undefined;
+  setMetricsRuntime(undefined);
 
   let config: GatewayConfig;
   try {
@@ -35,25 +37,37 @@ export async function runBootstrap(
   const resolvedPort = Number(process.env.PORT) || config.port || 3000;
   process.env.PORT = String(resolvedPort);
 
-  const app = await NestFactory.create(AppModule, GATEWAY_APP_OPTIONS);
-  app.enableShutdownHooks();
-  (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
-  await app.listen(resolvedPort);
+  const metrics = new MetricsService();
+  let metricsServer: Server | undefined;
+  setMetricsRuntime({ service: metrics });
+  if (metricsBind) {
+    try {
+      metricsServer = await startMetricsServer(
+        metrics,
+        metricsBind.port,
+        metricsBind.host,
+      );
+      setMetricsRuntime({ service: metrics, bind: metricsBind });
+      logger.log(
+        `Metrics listening on ${metricsBind.host}:${metricsBind.port}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(
+        `Metrics server failed to start; continuing without it: ${message}`,
+      );
+    }
+  }
 
-  // Observability must not take the data path down: a failed bind (e.g. port
-  // in use) is logged and the gateway keeps serving. A malformed METRICS_*
-  // value, by contrast, is a config error and already failed fast above.
   try {
-    const metricsServer = await startMetricsServer(
-      app.get(MetricsService),
-      metricsBind.port,
-      metricsBind.host,
-    );
-    (app.getHttpServer() as Server).once('close', () => metricsServer.close());
-    logger.log(`Metrics listening on ${metricsBind.host}:${metricsBind.port}`);
+    const app = await NestFactory.create(AppModule, GATEWAY_APP_OPTIONS);
+    app.enableShutdownHooks();
+    (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
+    (app.getHttpServer() as Server).once('close', () => metricsServer?.close());
+    await app.listen(resolvedPort);
   } catch (err) {
-    logger.error(
-      `Metrics server failed to start; continuing without it: ${(err as Error).message}`,
-    );
+    metricsServer?.close();
+    setMetricsRuntime(undefined);
+    throw err;
   }
 }

@@ -6,6 +6,7 @@ import {
 } from '../config/gateway-config.module';
 import type { GatewayConfig } from '../bootstrap/gateway-config.types';
 import { readInstanceEnv } from '../bootstrap/env';
+import { getMetricsRuntime } from '../bootstrap/metrics-runtime-holder';
 import { buildEurekaOptions } from './eureka-options.factory';
 
 /**
@@ -23,7 +24,11 @@ import { buildEurekaOptions } from './eureka-options.factory';
     EurekaModule.forRootAsync({
       inject: [GATEWAY_CONFIG],
       useFactory: (config: GatewayConfig) =>
-        buildEurekaOptions(config, readInstanceEnv()),
+        buildEurekaOptions(
+          config,
+          readInstanceEnv(),
+          getMetricsRuntime()?.bind,
+        ),
     }),
   ],
   exports: [EurekaModule],

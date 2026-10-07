@@ -1,4 +1,33 @@
-import { readBootEnv, readInstanceEnv, readMetricsBind } from './env';
+import {
+  readBootEnv,
+  readInstanceEnv,
+  readMetricsBind,
+  readMetricsEnabled,
+} from './env';
+
+describe('readMetricsEnabled', () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('defaults to enabled and accepts explicit true/false', () => {
+    delete process.env.METRICS_ENABLED;
+    expect(readMetricsEnabled()).toBe(true);
+    process.env.METRICS_ENABLED = 'true';
+    expect(readMetricsEnabled()).toBe(true);
+    process.env.METRICS_ENABLED = 'false';
+    expect(readMetricsEnabled()).toBe(false);
+  });
+
+  it.each(['', '0', 'TRUE', 'yes'])(
+    'rejects invalid enabled value %j',
+    (value) => {
+      process.env.METRICS_ENABLED = value;
+      expect(readMetricsEnabled).toThrow(/METRICS_ENABLED/);
+    },
+  );
+});
 
 describe('readBootEnv', () => {
   const originalEnv = { ...process.env };

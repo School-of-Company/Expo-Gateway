@@ -8,6 +8,49 @@ import type {
 } from '../bootstrap/gateway-config.types';
 
 describe('buildEurekaOptions', () => {
+  const config: GatewayConfig = {
+    jwt: { publicKey: 'pem' },
+    routing: { prefixes: {} },
+    eureka: { serviceUrl: 'http://eureka:8761/eureka' },
+  };
+
+  it.each([
+    ['127.0.0.1', '127.0.0.1', 18206],
+    ['10.0.0.9', '10.0.0.9', 18106],
+    ['0.0.0.0', '10.0.0.9', 9464],
+    ['::', '::1', 9464],
+    ['::', '10.0.0.9', 9464],
+  ])('advertises reachable metrics on %s for %s:%s', (host, ipAddr, port) => {
+    expect(
+      buildEurekaOptions(config, { ...instanceEnv, ipAddr }, { host, port })
+        .instance.metadata,
+    ).toEqual({
+      'prometheus.scrape': 'true',
+      'prometheus.port': String(port),
+      'prometheus.path': '/metrics',
+    });
+  });
+
+  it.each([
+    ['127.0.0.1', '10.0.0.9', 18206],
+    ['10.0.0.8', '10.0.0.9', 18106],
+    ['0.0.0.0', '::1', 9464],
+    ['127.0.0.1', '127.0.0.1', 0],
+  ])(
+    'omits metadata for unmatched or ephemeral bind %s/%s:%s',
+    (host, ipAddr, port) => {
+      expect(
+        buildEurekaOptions(config, { ...instanceEnv, ipAddr }, { host, port })
+          .instance.metadata,
+      ).toBeUndefined();
+    },
+  );
+
+  it('omits metadata when metrics are disabled', () => {
+    expect(
+      buildEurekaOptions(config, instanceEnv).instance.metadata,
+    ).toBeUndefined();
+  });
   const instanceEnv: InstanceEnv = {
     hostName: 'gateway-1',
     ipAddr: '10.0.0.9',
