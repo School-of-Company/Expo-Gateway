@@ -105,6 +105,20 @@ $ npm run test:cov
 
 ## Deployment
 
+GitHub Actions validates pull requests without packaging, SSH credentials or
+remote deployment. Pushes to `develop` deploy to dev; pushes to `main` deploy
+to prod. Documentation and local monitoring changes do not trigger push deploys.
+
+Configure repository variables `EXPO_SSH_HOST`, `EXPO_SSH_PORT`,
+`EXPO_SSH_USER`, `EXPO_REMOTE_ROOT_DEV` and `EXPO_REMOTE_ROOT_PROD`, plus
+secrets `EXPO_SSH_KEY` and `EXPO_SSH_KNOWN_HOSTS`. Root paths must be absolute
+and contain no whitespace or shell metacharacters. Missing deployment variables
+stop the job before installation; prod never falls back to the dev root.
+The SSH target's Node must match the runner's platform, architecture, Node ABI
+and libc version before the bundled `node_modules` is uploaded. A mismatch
+stops deployment before release upload. Run the workflow regression check with
+`node test/deploy-workflow.check.cjs` after `npm ci`.
+
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
 
 If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
