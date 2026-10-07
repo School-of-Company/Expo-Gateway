@@ -4,24 +4,51 @@ name: Deploy
 on:
   push:
     branches: [main, develop]
+    paths-ignore:
+      - '**/*.md'
+      - '.claude/**'
+      - 'monitoring/**'
+      - 'docker-compose.yml'
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: deploy-gateway-${{ github.ref_name }}
+  group: deploy-gateway-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.ref_name == 'main' || github.ref_name == 'develop'
+    if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'develop'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       SVC: gateway
       DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
-      REMOTE_ROOT: /srv/users/festa/2026/dev/team1/expo
+      REMOTE_ROOT: ${{ vars[github.ref_name == 'main' && 'EXPO_REMOTE_ROOT_PROD' || 'EXPO_REMOTE_ROOT_DEV'] }}
+      HOST: ${{ vars.EXPO_SSH_HOST }}
+      PORT: ${{ vars.EXPO_SSH_PORT }}
+      USER: ${{ vars.EXPO_SSH_USER }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Validate deployment settings
+        if: github.event_name != 'pull_request'
+        run: |
+          : "${HOST:?Set EXPO_SSH_HOST}" "${PORT:?Set EXPO_SSH_PORT}" "${USER:?Set EXPO_SSH_USER}"
+          : "${REMOTE_ROOT:?Set EXPO_REMOTE_ROOT_DEV and EXPO_REMOTE_ROOT_PROD}"
+          [[ "$PORT" =~ ^[0-9]{1,5}$ ]]
+          (( 10#$PORT >= 1 && 10#$PORT <= 65535 ))
+          [[ "$HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$REMOTE_ROOT" =~ ^/[a-zA-Z0-9_./-]+$ ]]
 
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '26'
           cache: npm
@@ -34,31 +61,43 @@ jobs:
         run: |
           npm test
           npm run test:e2e
+          npx tsc -p tsconfig.build.json --noEmit
+          npx eslint "{src,apps,libs,test}/**/*.ts"
+          node test/deploy-workflow.check.cjs
 
       - name: Build
         run: |
           npm run build
-          npm prune --omit=dev
 
       - name: Package
-        run: tar czf release.tar.gz dist node_modules package.json
+        if: github.event_name != 'pull_request'
+        run: |
+          npm prune --omit=dev
+          tar czf release.tar.gz dist node_modules package.json
 
       - name: Configure SSH
+        if: github.event_name != 'pull_request'
         env:
           SSH_KEY: ${{ secrets.EXPO_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.EXPO_SSH_KNOWN_HOSTS }}
         run: |
+          : "${SSH_KEY:?Set EXPO_SSH_KEY}" "${KNOWN_HOSTS:?Set EXPO_SSH_KNOWN_HOSTS}"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
       - name: Upload and deploy
-        env:
-          HOST: ${{ vars.EXPO_SSH_HOST }}
-          PORT: ${{ vars.EXPO_SSH_PORT }}
-          USER: ${{ vars.EXPO_SSH_USER }}
+        if: github.event_name != 'pull_request'
         run: |
+          SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          RUNTIME_CHECK='JSON.stringify([process.platform, process.arch, process.versions.modules, process.report.getReport().header.glibcVersionRuntime || "musl"])'
+          LOCAL_RUNTIME=$(node -p "$RUNTIME_CHECK")
+          REMOTE_RUNTIME=$(ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "node -p '$RUNTIME_CHECK'")
+          if [[ "$LOCAL_RUNTIME" != "$REMOTE_RUNTIME" ]]; then
+            echo 'Runner and deployment target must use the same platform, architecture, Node ABI and libc version.' >&2
+            exit 1
+          fi
           REL="${GITHUB_SHA::12}-${GITHUB_RUN_ATTEMPT}"
-          scp -P "$PORT" release.tar.gz "$USER@$HOST:$REMOTE_ROOT/apps/$DEPLOY_ENV/$SVC/incoming/$REL.tar.gz"
-          ssh -p "$PORT" "$USER@$HOST" "$REMOTE_ROOT/bin/deploy.sh $SVC $DEPLOY_ENV $REL"
+          scp "${SSH_OPTIONS[@]}" -P "$PORT" release.tar.gz "$USER@$HOST:$REMOTE_ROOT/apps/$DEPLOY_ENV/$SVC/incoming/$REL.tar.gz"
+          ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "$REMOTE_ROOT/bin/deploy.sh $SVC $DEPLOY_ENV $REL"
