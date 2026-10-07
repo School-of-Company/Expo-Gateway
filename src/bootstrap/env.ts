@@ -33,6 +33,14 @@ export interface MetricsBind {
   port: number;
 }
 
+export function readMetricsEnabled(): boolean {
+  const value = process.env.METRICS_ENABLED ?? 'true';
+  if (value !== 'true' && value !== 'false') {
+    throw new Error('Invalid METRICS_ENABLED: must be true or false');
+  }
+  return value === 'true';
+}
+
 /**
  * The metrics listener is separate from the public one. It defaults to
  * loopback so a gateway started directly on a VM doesn't expose it on an

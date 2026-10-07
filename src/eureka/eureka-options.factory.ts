@@ -1,4 +1,6 @@
 import type { EurekaModuleOptions } from '@school-of-company/nestjs-eureka';
+import { isIP } from 'node:net';
+import type { MetricsBind } from '../bootstrap/env';
 import type {
   GatewayConfig,
   InstanceEnv,
@@ -11,7 +13,14 @@ export const GATEWAY_EUREKA_APP_NAME = 'expo-gateway';
 export function buildEurekaOptions(
   config: GatewayConfig,
   instance: InstanceEnv,
+  metricsBind?: MetricsBind,
 ): EurekaModuleOptions {
+  const metricsReachable =
+    metricsBind &&
+    metricsBind.port > 0 &&
+    (metricsBind.host === instance.ipAddr ||
+      (metricsBind.host === '0.0.0.0' && isIP(instance.ipAddr) === 4) ||
+      (metricsBind.host === '::' && isIP(instance.ipAddr) > 0));
   return {
     serviceUrl: config.eureka.serviceUrl,
     heartbeatIntervalSeconds: config.eureka.heartbeatIntervalSeconds,
@@ -22,6 +31,13 @@ export function buildEurekaOptions(
       hostName: instance.hostName,
       ipAddr: instance.ipAddr,
       port: instance.port,
+      ...(metricsReachable && {
+        metadata: {
+          'prometheus.scrape': 'true',
+          'prometheus.port': String(metricsBind.port),
+          'prometheus.path': '/metrics',
+        },
+      }),
     },
   };
 }
