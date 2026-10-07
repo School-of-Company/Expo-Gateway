@@ -10,6 +10,18 @@ import * as jwt from 'jsonwebtoken';
 export function verifyAccessToken(
   token: string,
   publicKey: string,
-): jwt.JwtPayload | string {
-  return jwt.verify(token, publicKey, { algorithms: ['RS256'] });
+): jwt.JwtPayload {
+  const payload = jwt.verify(token, publicKey, { algorithms: ['RS256'] });
+  if (
+    typeof payload === 'string' ||
+    typeof payload.iat !== 'number' ||
+    !Number.isFinite(payload.iat) ||
+    typeof payload.exp !== 'number' ||
+    !Number.isFinite(payload.exp) ||
+    payload.iat > Math.floor(Date.now() / 1000) ||
+    payload.exp - payload.iat > 900
+  ) {
+    throw new jwt.JsonWebTokenError('invalid access token lifetime');
+  }
+  return payload;
 }

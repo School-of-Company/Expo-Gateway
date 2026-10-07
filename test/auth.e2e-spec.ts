@@ -87,6 +87,39 @@ describe('Auth (e2e)', () => {
     const res = await request(getHttpServer(app)).get('/auth/login');
     expect(res.status).toBe(200);
   });
+
+  it.each([
+    ['expired', -900, 0, 401],
+    ['future iat', 60, 900, 401],
+    ['over 15 minutes', -60, 841, 401],
+    ['exactly 15 minutes', -60, 840, 200],
+    ['missing iat', undefined, 900, 401],
+    ['missing exp', 0, undefined, 401],
+    ['missing both claims', undefined, undefined, 401],
+    ['tampered', -60, 840, 401],
+  ])('handles a %s token over HTTP', async (name, iat, exp, status) => {
+    const now = Math.floor(Date.now() / 1000);
+    let token = jwt.sign(
+      {
+        sub: 'user-1',
+        ...(iat === undefined ? {} : { iat: now + iat }),
+        ...(exp === undefined ? {} : { exp: now + exp }),
+      },
+      privateKeyPem,
+      { algorithm: 'RS256', noTimestamp: iat === undefined },
+    );
+    if (name === 'tampered') {
+      const index = token.length - 10;
+      token =
+        token.slice(0, index) +
+        (token[index] === 'a' ? 'b' : 'a') +
+        token.slice(index + 1);
+    }
+    const res = await request(getHttpServer(app))
+      .get('/forms')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(status);
+  });
   describe('X-User-Id forwarding', () => {
     type Echo = { xUserId: string | null; authorization: string | null };
     const signToken = () =>
