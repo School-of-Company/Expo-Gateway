@@ -25,6 +25,52 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Gateway configuration
+
+### SMS rate limiting
+
+Gateway accepts an optional `rateLimit.sms` policy from Config Server:
+
+```yaml
+rateLimit:
+  ttlSeconds: 60
+  limit: 100
+  sms:
+    ttlSeconds: 60
+    limit: 10
+```
+
+The SMS budget applies to `/sms` and `/sms/...`, shared across methods and
+paths for each client IP. The global budget still applies. Exceeding either
+budget returns HTTP 429 before JWT verification; SMS rejection includes
+`Retry-After-sms`. SMS values must be positive safe integers. Omitting `sms`
+keeps the existing global policy.
+
+Limits use the existing in-memory throttler storage per Gateway instance and
+reset on restart. The deployment must restrict direct Gateway access and
+forward client IPs through the trusted proxy. Notification Server's Redis
+limits remain separate.
+
+Public SMS methods and profile settings belong to
+[Config Server #26](https://github.com/School-of-Company/Expo-Config-Server/issues/26).
+Adding this Gateway capability alone does not enable the SMS policy or make
+SMS endpoints public.
+
+### Shared monitoring responsibilities
+
+Gateway keeps its `gateway_http_*` metrics, dedicated metrics listener and
+local monitoring stack. Eureka advertises `prometheus.scrape`,
+`prometheus.port` and `prometheus.path` only after the metrics listener binds
+successfully and is reachable through the registered instance address.
+This is implemented by [PR #19](https://github.com/School-of-Company/Expo-Gateway/pull/19).
+
+Shared recording rules, dashboards and staging scrape verification belong to
+[Monitoring #3](https://github.com/School-of-Company/Expo-Monitoring/issues/3).
+Common exporter conventions belong to
+[Config Server #8](https://github.com/School-of-Company/Expo-Config-Server/issues/8).
+The Gateway-local dashboard uses its dedicated Prometheus; the shared stack
+must scope runtime queries to Gateway to avoid mixing other services.
+
 ## Project setup
 
 ```bash

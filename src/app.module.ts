@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import type { ThrottlerOptions } from '@nestjs/throttler';
+import type { Request } from 'express';
 import {
   GatewayConfigModule,
   GATEWAY_CONFIG,
@@ -18,13 +21,26 @@ import { HealthController } from './health/health.controller';
     MetricsModule,
     ThrottlerModule.forRootAsync({
       inject: [GATEWAY_CONFIG],
-      useFactory: (config: GatewayConfig) => [
+      useFactory: (config: GatewayConfig): ThrottlerOptions[] => [
         {
           ttl:
             (config.rateLimit?.ttlSeconds ?? DEFAULT_RATE_LIMIT.ttlSeconds) *
             1000,
           limit: config.rateLimit?.limit ?? DEFAULT_RATE_LIMIT.limit,
         },
+        ...(config.rateLimit?.sms
+          ? [
+              {
+                name: 'sms',
+                ttl: config.rateLimit.sms.ttlSeconds * 1000,
+                limit: config.rateLimit.sms.limit,
+                skipIf: (context: ExecutionContext) => {
+                  const { path } = context.switchToHttp().getRequest<Request>();
+                  return path !== '/sms' && !path.startsWith('/sms/');
+                },
+              },
+            ]
+          : []),
       ],
     }),
     ProxyModule,
