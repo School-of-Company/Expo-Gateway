@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../.tmp/stub-backend",
+    "rootDir": ".",
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["./**/*.ts"]
+}
