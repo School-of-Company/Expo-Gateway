@@ -81,6 +81,24 @@ describe('parseGatewayConfig', () => {
     ).toThrow(InvalidGatewayConfigError);
   });
 
+  it.each([
+    null,
+    {},
+    '10',
+    { ttlSeconds: 60, limit: 0 },
+    { ttlSeconds: -1, limit: 10 },
+    { ttlSeconds: 60, limit: 1.5 },
+    { ttlSeconds: Infinity, limit: 10 },
+    { ttlSeconds: 60, limit: '10' },
+  ])('rejects malformed SMS policy %j at boot', (sms) => {
+    expect(() =>
+      parseGatewayConfig({
+        ...valid,
+        rateLimit: { ttlSeconds: 60, limit: 100, sms },
+      }),
+    ).toThrow(InvalidGatewayConfigError);
+  });
+
   it('accepts "METHOD /path" entries in publicPaths', () => {
     expect(() =>
       parseGatewayConfig({

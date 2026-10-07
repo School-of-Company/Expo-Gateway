@@ -5,6 +5,10 @@ export interface RoutingConfig {
 export interface RateLimitConfig {
   ttlSeconds: number;
   limit: number;
+  readonly sms?: {
+    readonly ttlSeconds: number;
+    readonly limit: number;
+  };
 }
 
 export interface EurekaSharedConfig {

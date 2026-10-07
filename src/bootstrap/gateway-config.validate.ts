@@ -64,14 +64,37 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
   }
 
   if (candidate.rateLimit !== undefined) {
-    const rateLimit = candidate.rateLimit as Record<string, unknown>;
+    const rateLimit = candidate.rateLimit;
     if (
+      typeof rateLimit !== 'object' ||
+      rateLimit === null ||
+      !('ttlSeconds' in rateLimit) ||
+      !('limit' in rateLimit) ||
       typeof rateLimit.ttlSeconds !== 'number' ||
       typeof rateLimit.limit !== 'number'
     ) {
       throw new InvalidGatewayConfigError(
         'rateLimit.ttlSeconds and rateLimit.limit must be numbers when rateLimit is present',
       );
+    }
+    const sms = 'sms' in rateLimit ? rateLimit.sms : undefined;
+    if (sms !== undefined) {
+      if (
+        typeof sms !== 'object' ||
+        sms === null ||
+        !('ttlSeconds' in sms) ||
+        !('limit' in sms) ||
+        typeof sms.ttlSeconds !== 'number' ||
+        typeof sms.limit !== 'number' ||
+        !Number.isSafeInteger(sms.ttlSeconds) ||
+        sms.ttlSeconds <= 0 ||
+        !Number.isSafeInteger(sms.limit) ||
+        sms.limit <= 0
+      ) {
+        throw new InvalidGatewayConfigError(
+          'rateLimit.sms.ttlSeconds and rateLimit.sms.limit must be positive safe integers',
+        );
+      }
     }
   }
 
