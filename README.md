@@ -46,6 +46,12 @@ budget returns HTTP 429 before JWT verification; SMS rejection includes
 `Retry-After-sms`. SMS values must be positive safe integers. Omitting `sms`
 keeps the existing global policy.
 
+An optional `rateLimit.survey` policy (same shape as `sms`) budgets only
+`POST /surveys/answer/public/...` per client IP, so the public survey submit can
+be limited without throttling the survey page (`GET /surveys/public/...`).
+Exceeding it returns HTTP 429 with `Retry-After-survey`. Pick the value with
+shared booth IPs in mind: many devices behind one address share the budget.
+
 Limits use the existing in-memory throttler storage per Gateway instance and
 reset on restart. The deployment must restrict direct Gateway access and
 forward client IPs through the trusted proxy. Notification Server's Redis

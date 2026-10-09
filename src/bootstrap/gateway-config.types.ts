@@ -9,6 +9,11 @@ export interface RateLimitConfig {
     readonly ttlSeconds: number;
     readonly limit: number;
   };
+  /** IP budget for the public survey submit (`POST /surveys/answer/public/*`). */
+  readonly survey?: {
+    readonly ttlSeconds: number;
+    readonly limit: number;
+  };
 }
 
 export interface EurekaSharedConfig {
