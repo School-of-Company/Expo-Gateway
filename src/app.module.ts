@@ -41,6 +41,27 @@ import { HealthController } from './health/health.controller';
               },
             ]
           : []),
+        ...(config.rateLimit?.survey
+          ? [
+              {
+                name: 'survey',
+                ttl: config.rateLimit.survey.ttlSeconds * 1000,
+                limit: config.rateLimit.survey.limit,
+                // Only submissions are budgeted: the survey page itself must
+                // keep loading for people queueing at a shared booth IP.
+                skipIf: (context: ExecutionContext) => {
+                  const { method, path } = context
+                    .switchToHttp()
+                    .getRequest<Request>();
+                  return (
+                    method !== 'POST' ||
+                    (path !== '/surveys/answer/public' &&
+                      !path.startsWith('/surveys/answer/public/'))
+                  );
+                },
+              },
+            ]
+          : []),
       ],
     }),
     ProxyModule,

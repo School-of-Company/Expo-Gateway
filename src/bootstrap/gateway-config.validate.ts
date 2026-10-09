@@ -19,6 +19,19 @@ function isRecordOfStrings(value: unknown): value is Record<string, string> {
   return Object.values(value).every((v) => typeof v === 'string');
 }
 
+function isPositiveIntegerPolicy(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const { ttlSeconds, limit } = value as Record<string, unknown>;
+  return (
+    typeof ttlSeconds === 'number' &&
+    typeof limit === 'number' &&
+    Number.isSafeInteger(ttlSeconds) &&
+    ttlSeconds > 0 &&
+    Number.isSafeInteger(limit) &&
+    limit > 0
+  );
+}
+
 /**
  * Structural validation only — this is boot-time config from a trusted
  * internal Config Server, not user input, so we check shape, not content.
@@ -77,22 +90,14 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
         'rateLimit.ttlSeconds and rateLimit.limit must be numbers when rateLimit is present',
       );
     }
-    const sms = 'sms' in rateLimit ? rateLimit.sms : undefined;
-    if (sms !== undefined) {
-      if (
-        typeof sms !== 'object' ||
-        sms === null ||
-        !('ttlSeconds' in sms) ||
-        !('limit' in sms) ||
-        typeof sms.ttlSeconds !== 'number' ||
-        typeof sms.limit !== 'number' ||
-        !Number.isSafeInteger(sms.ttlSeconds) ||
-        sms.ttlSeconds <= 0 ||
-        !Number.isSafeInteger(sms.limit) ||
-        sms.limit <= 0
-      ) {
+    const policies: Record<string, unknown> = {
+      sms: 'sms' in rateLimit ? rateLimit.sms : undefined,
+      survey: 'survey' in rateLimit ? rateLimit.survey : undefined,
+    };
+    for (const [name, policy] of Object.entries(policies)) {
+      if (policy !== undefined && !isPositiveIntegerPolicy(policy)) {
         throw new InvalidGatewayConfigError(
-          'rateLimit.sms.ttlSeconds and rateLimit.sms.limit must be positive safe integers',
+          `rateLimit.${name}.ttlSeconds and rateLimit.${name}.limit must be positive safe integers`,
         );
       }
     }

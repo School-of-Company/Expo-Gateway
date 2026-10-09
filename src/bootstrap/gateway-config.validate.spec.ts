@@ -99,6 +99,36 @@ describe('parseGatewayConfig', () => {
     ).toThrow(InvalidGatewayConfigError);
   });
 
+  it.each([
+    null,
+    {},
+    '10',
+    { ttlSeconds: 60, limit: 0 },
+    { ttlSeconds: -1, limit: 10 },
+    { ttlSeconds: 60, limit: 1.5 },
+    { ttlSeconds: 60, limit: '10' },
+  ])('rejects malformed survey policy %j at boot', (survey) => {
+    expect(() =>
+      parseGatewayConfig({
+        ...valid,
+        rateLimit: { ttlSeconds: 60, limit: 100, survey },
+      }),
+    ).toThrow(InvalidGatewayConfigError);
+  });
+
+  it('accepts a well-formed survey policy', () => {
+    expect(() =>
+      parseGatewayConfig({
+        ...valid,
+        rateLimit: {
+          ttlSeconds: 60,
+          limit: 100,
+          survey: { ttlSeconds: 60, limit: 30 },
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it('accepts "METHOD /path" entries in publicPaths', () => {
     expect(() =>
       parseGatewayConfig({
