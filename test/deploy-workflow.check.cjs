@@ -25,7 +25,8 @@ const settings = {
 assert.equal(workflow.permissions.contents, 'read');
 assert.ok(workflow.on.pull_request);
 assert.equal(job['timeout-minutes'], 20);
-assert.ok(job.env.REMOTE_ROOT.includes("vars[github.ref_name == 'main'"));
+assert.equal(job.env.REMOTE_ROOT, '/srv/users/projects/2026/team1/expo');
+assert.deepEqual(workflow.on.push.branches, ['main']);
 for (const entry of job.steps.filter((entry) => entry.uses)) {
   assert.match(entry.uses, /@[a-f0-9]{40}$/);
 }
@@ -90,7 +91,7 @@ try {
   }
   assert.ok(
     commands[1].includes(
-      '/srv/expo/dev/apps/dev/gateway/incoming/123456789012-1.tar.gz',
+      '/srv/expo/dev/app/gateway/incoming/123456789012-1.tar.gz',
     ),
   );
   writeFileSync(calls, '');
