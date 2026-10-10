@@ -1,9 +1,9 @@
 name: Deploy
 
-# main -> prod, develop -> dev (glink.kr, team1/expo)
+# main 에 머지되면 배포한다 (glink.kr ~/expo, 개발/운영 구분 없는 단일 환경). PR 에서는 테스트만 돈다.
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - '.claude/**'
@@ -22,13 +22,13 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'develop'
+    if: github.event_name == 'pull_request' || github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SVC: gateway
-      DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
-      REMOTE_ROOT: ${{ vars[github.ref_name == 'main' && 'EXPO_REMOTE_ROOT_PROD' || 'EXPO_REMOTE_ROOT_DEV'] }}
+      DEPLOY_ENV: prod # 서버는 단일 환경이라 무시한다 (deploy.sh 인자 호환용)
+      REMOTE_ROOT: /srv/users/projects/2026/team1/expo
       HOST: ${{ vars.EXPO_SSH_HOST }}
       PORT: ${{ vars.EXPO_SSH_PORT }}
       USER: ${{ vars.EXPO_SSH_USER }}
@@ -37,7 +37,7 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           : "${HOST:?Set EXPO_SSH_HOST}" "${PORT:?Set EXPO_SSH_PORT}" "${USER:?Set EXPO_SSH_USER}"
-          : "${REMOTE_ROOT:?Set EXPO_REMOTE_ROOT_DEV and EXPO_REMOTE_ROOT_PROD}"
+          : "${REMOTE_ROOT:?Set REMOTE_ROOT}"
           [[ "$PORT" =~ ^[0-9]{1,5}$ ]]
           (( 10#$PORT >= 1 && 10#$PORT <= 65535 ))
           [[ "$HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
@@ -93,11 +93,12 @@ jobs:
           SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
           RUNTIME_CHECK='JSON.stringify([process.platform, process.arch, process.versions.modules, process.report.getReport().header.glibcVersionRuntime || "musl"])'
           LOCAL_RUNTIME=$(node -p "$RUNTIME_CHECK")
-          REMOTE_RUNTIME=$(ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "node -p '$RUNTIME_CHECK'")
+          # 서버 PATH 의 node 는 시스템 Node 라서, Gateway 를 실제로 실행하는 배포 폴더의 Node 와 비교한다.
+          REMOTE_RUNTIME=$(ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "$REMOTE_ROOT/runtime/node/bin/node -p '$RUNTIME_CHECK'")
           if [[ "$LOCAL_RUNTIME" != "$REMOTE_RUNTIME" ]]; then
             echo 'Runner and deployment target must use the same platform, architecture, Node ABI and libc version.' >&2
             exit 1
           fi
           REL="${GITHUB_SHA::12}-${GITHUB_RUN_ATTEMPT}"
-          scp "${SSH_OPTIONS[@]}" -P "$PORT" release.tar.gz "$USER@$HOST:$REMOTE_ROOT/apps/$DEPLOY_ENV/$SVC/incoming/$REL.tar.gz"
+          scp "${SSH_OPTIONS[@]}" -P "$PORT" release.tar.gz "$USER@$HOST:$REMOTE_ROOT/app/$SVC/incoming/$REL.tar.gz"
           ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "$REMOTE_ROOT/bin/deploy.sh $SVC $DEPLOY_ENV $REL"
