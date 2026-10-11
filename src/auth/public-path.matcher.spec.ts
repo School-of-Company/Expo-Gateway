@@ -58,6 +58,75 @@ describe('isPublicPath', () => {
     });
   });
 
+  describe('"METHOD /path/{param}" entries', () => {
+    const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const publicPaths = [
+      'POST /application/{expoId}',
+      'GET /application/expos/{expoId}/my-applications',
+      'POST /application/expos/{expoId}/my-applications/{type:STANDARD|TRAINING}/{applicationId}/cancellation',
+    ];
+
+    it('matches a decimal or UUID id per {name} segment', () => {
+      expect(isPublicPath('/application/12', publicPaths, 'POST')).toBe(true);
+      expect(isPublicPath(`/application/${UUID}/`, publicPaths, 'POST')).toBe(
+        true,
+      );
+      expect(
+        isPublicPath(
+          `/application/expos/${UUID}/my-applications`,
+          publicPaths,
+          'GET',
+        ),
+      ).toBe(true);
+    });
+
+    it('does not open a same-depth sibling with a word in the id slot', () => {
+      for (const word of ['admin', 'pre-standard', 'field', 'expos']) {
+        expect(isPublicPath(`/application/${word}`, publicPaths, 'POST')).toBe(
+          false,
+        );
+      }
+    });
+
+    it('matches a {name:A|B} segment only against the listed values', () => {
+      const path = (type: string) =>
+        `/application/expos/1/my-applications/${type}/9/cancellation`;
+      expect(isPublicPath(path('STANDARD'), publicPaths, 'POST')).toBe(true);
+      expect(isPublicPath(path('TRAINING'), publicPaths, 'POST')).toBe(true);
+      expect(isPublicPath(path('standard'), publicPaths, 'POST')).toBe(false);
+      expect(isPublicPath(path('ADMIN'), publicPaths, 'POST')).toBe(false);
+    });
+
+    it('keeps the method and the segment count exact', () => {
+      expect(isPublicPath('/application/12', publicPaths, 'GET')).toBe(false);
+      expect(isPublicPath('/application', publicPaths, 'POST')).toBe(false);
+      expect(isPublicPath('/application/12/x', publicPaths, 'POST')).toBe(
+        false,
+      );
+      expect(
+        isPublicPath(
+          '/application/expos/3/my-applications/1',
+          publicPaths,
+          'GET',
+        ),
+      ).toBe(false);
+    });
+
+    it('rejects traversal, encoded and empty values', () => {
+      for (const value of ['..', '.', '%2e%2e', '1%2Finternal', '1;b', '']) {
+        expect(isPublicPath(`/application/${value}`, publicPaths, 'POST')).toBe(
+          false,
+        );
+      }
+    });
+
+    it('treats a literal brace in the request path as data, not a pattern', () => {
+      expect(isPublicPath('/application/{expoId}', publicPaths, 'POST')).toBe(
+        false,
+      );
+    });
+  });
+
   it('combines plain and method-qualified entries', () => {
     const publicPaths = ['/health', 'POST /auth'];
     expect(isPublicPath('/health', publicPaths, 'GET')).toBe(true);
@@ -87,5 +156,19 @@ describe('isValidPublicPathEntry', () => {
     expect(isValidPublicPathEntry('POST /auth /x')).toBe(false);
     expect(isValidPublicPathEntry('POST auth')).toBe(false);
     expect(isValidPublicPathEntry('/auth ')).toBe(false);
+  });
+
+  it('accepts whole-segment {name} / {name:A|B} placeholders on method entries only', () => {
+    expect(isValidPublicPathEntry('POST /application/{expoId}')).toBe(true);
+    expect(isValidPublicPathEntry('GET /a/{x}/b/{y2}')).toBe(true);
+    expect(isValidPublicPathEntry('/application/{expoId}')).toBe(false);
+    expect(isValidPublicPathEntry('POST /application/x{expoId}')).toBe(false);
+    expect(isValidPublicPathEntry('POST /application/{expo-id}')).toBe(false);
+    expect(isValidPublicPathEntry('POST /application/{}')).toBe(false);
+    expect(isValidPublicPathEntry('POST /a/{type:STANDARD|TRAINING}')).toBe(
+      true,
+    );
+    expect(isValidPublicPathEntry('POST /a/{type:}')).toBe(false);
+    expect(isValidPublicPathEntry('POST /a/{type:A||B}')).toBe(false);
   });
 });

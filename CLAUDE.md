@@ -53,6 +53,7 @@ expo-gateway/
 │   ├── auth/                         # JWT (RS256) verify-only guard + public-path matching
 │   ├── proxy/                        # Catch-all controller, route resolution, load balancing,
 │   │                                 # request-metrics middleware, background Eureka poller
+│   ├── cors/                         # Credentialed CORS + Origin check on writes (optional `cors` config)
 │   ├── metrics/                      # MetricsService (prom-client) + separate-port /metrics server
 │   └── health/                       # GET /health only
 ├── monitoring/                       # Prometheus config + alert rules, Grafana provisioning + dashboard
@@ -69,9 +70,11 @@ expo-gateway/
 
 ```
 Client → Gateway
+  CorsMiddleware (only with `cors`: preflight 204/403, foreign-Origin write 403)
   ThrottlerGuard (IP-based, 429 on exceed)
   → JwtAuthGuard (public method+path? skip : verify RS256, 401 on failure)
   → ProxyController (@All('/{*splat}'))
+      → blocked path (`internal`/`.`/`..` segment) → 404, never forwarded
       → RouteResolverService: path prefix → Eureka app name (config-driven, longest-prefix-wins;
                                              no matching prefix → 404)
       → LoadBalancerService: getInstances(appName) → filter UP → round-robin

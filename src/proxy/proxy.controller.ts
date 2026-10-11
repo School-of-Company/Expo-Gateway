@@ -2,8 +2,10 @@ import { All, Controller, Next, Req, Res } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { GatewayConfigService } from '../config/gateway-config.service';
+import { stripUpstreamCorsHeaders } from '../cors/cors.policy';
 import { isDocsPath } from '../docs/docs.paths';
 import { MetricsService } from '../metrics/metrics.service';
+import { INTERNAL_TOKEN_HEADER, isBlockedPath } from './blocked-paths';
 import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
 import { LoadBalancerService } from './load-balancer.service';
@@ -32,7 +34,10 @@ export class ProxyController {
       return context.target;
     },
     on: {
-      proxyRes: (_proxyRes, req) => {
+      proxyRes: (proxyRes, req) => {
+        if (this.gatewayConfig.getCorsAllowedOrigins()) {
+          stripUpstreamCorsHeaders(proxyRes.headers);
+        }
         const context = this.contexts.get(req);
         if (context) {
           const seconds =
@@ -74,7 +79,9 @@ export class ProxyController {
       return;
     }
 
-    const appName = this.routeResolver.resolve(req.path);
+    const appName = isBlockedPath(req.path)
+      ? undefined
+      : this.routeResolver.resolve(req.path);
     if (!appName) {
       res.status(404).json({ message: 'Not Found' });
       return;
@@ -95,6 +102,7 @@ export class ProxyController {
       throw err;
     }
 
+    delete req.headers[INTERNAL_TOKEN_HEADER];
     this.contexts.set(req, {
       target: targetUrl,
       app: appName,

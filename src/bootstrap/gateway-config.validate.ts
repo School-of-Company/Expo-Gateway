@@ -1,4 +1,5 @@
 import { isValidPublicPathEntry } from '../auth/public-path.matcher';
+import { isExactOrigin } from '../cors/cors.policy';
 import type { GatewayConfig } from './gateway-config.types';
 
 export class InvalidGatewayConfigError extends Error {
@@ -164,6 +165,10 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     const policies: Record<string, unknown> = {
       sms: 'sms' in rateLimit ? rateLimit.sms : undefined,
       survey: 'survey' in rateLimit ? rateLimit.survey : undefined,
+      participantAuthCode:
+        'participantAuthCode' in rateLimit
+          ? rateLimit.participantAuthCode
+          : undefined,
     };
     for (const [name, policy] of Object.entries(policies)) {
       if (policy !== undefined && !isPositiveIntegerPolicy(policy)) {
@@ -189,6 +194,20 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
 
   if (candidate.docs !== undefined) {
     validateDocs(candidate.docs);
+  }
+
+  if (candidate.cors !== undefined) {
+    const cors = candidate.cors as Record<string, unknown> | null;
+    const origins = cors?.allowedOrigins;
+    if (
+      !Array.isArray(origins) ||
+      origins.length === 0 ||
+      !origins.every(isExactOrigin)
+    ) {
+      throw new InvalidGatewayConfigError(
+        'cors.allowedOrigins must be a non-empty array of exact http(s) origins (no "*", path or trailing slash)',
+      );
+    }
   }
 
   if (candidate.port !== undefined && typeof candidate.port !== 'number') {

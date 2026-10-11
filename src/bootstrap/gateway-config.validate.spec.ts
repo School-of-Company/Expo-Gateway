@@ -129,6 +129,47 @@ describe('parseGatewayConfig', () => {
     ).not.toThrow();
   });
 
+  it('accepts a participantAuthCode policy and rejects a malformed one', () => {
+    const withPolicy = (participantAuthCode: unknown) => ({
+      ...valid,
+      rateLimit: { ttlSeconds: 60, limit: 100, participantAuthCode },
+    });
+    expect(() =>
+      parseGatewayConfig(withPolicy({ ttlSeconds: 600, limit: 5 })),
+    ).not.toThrow();
+    expect(() =>
+      parseGatewayConfig(withPolicy({ ttlSeconds: 600, limit: 0 })),
+    ).toThrow(InvalidGatewayConfigError);
+  });
+
+  it('accepts exact cors origins', () => {
+    expect(() =>
+      parseGatewayConfig({
+        ...valid,
+        cors: {
+          allowedOrigins: ['https://expo.example.com', 'http://localhost:3000'],
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    null,
+    {},
+    { allowedOrigins: [] },
+    { allowedOrigins: ['*'] },
+    { allowedOrigins: ['null'] },
+    { allowedOrigins: ['https://expo.example.com/'] },
+    { allowedOrigins: ['https://expo.example.com/path'] },
+    { allowedOrigins: ['expo.example.com'] },
+    { allowedOrigins: ['ftp://expo.example.com'] },
+    { allowedOrigins: ['https://EXPO.example.com'] },
+  ])('rejects cors %j at boot', (cors) => {
+    expect(() => parseGatewayConfig({ ...valid, cors })).toThrow(
+      InvalidGatewayConfigError,
+    );
+  });
+
   it('accepts "METHOD /path" entries in publicPaths', () => {
     expect(() =>
       parseGatewayConfig({
