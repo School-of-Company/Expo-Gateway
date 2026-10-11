@@ -1,0 +1,104 @@
+name: Deploy
+
+# main 에 머지되면 배포한다 (glink.kr ~/expo, 개발/운영 구분 없는 단일 환경). PR 에서는 테스트만 돈다.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.claude/**'
+      - 'monitoring/**'
+      - 'docker-compose.yml'
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-gateway-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'pull_request' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SVC: gateway
+      DEPLOY_ENV: prod # 서버는 단일 환경이라 무시한다 (deploy.sh 인자 호환용)
+      REMOTE_ROOT: /srv/users/projects/2026/team1/expo
+      HOST: ${{ vars.EXPO_SSH_HOST }}
+      PORT: ${{ vars.EXPO_SSH_PORT }}
+      USER: ${{ vars.EXPO_SSH_USER }}
+    steps:
+      - name: Validate deployment settings
+        if: github.event_name != 'pull_request'
+        run: |
+          : "${HOST:?Set EXPO_SSH_HOST}" "${PORT:?Set EXPO_SSH_PORT}" "${USER:?Set EXPO_SSH_USER}"
+          : "${REMOTE_ROOT:?Set REMOTE_ROOT}"
+          [[ "$PORT" =~ ^[0-9]{1,5}$ ]]
+          (( 10#$PORT >= 1 && 10#$PORT <= 65535 ))
+          [[ "$HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$REMOTE_ROOT" =~ ^/[a-zA-Z0-9_./-]+$ ]]
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # 테스트가 실패하면 업로드 전에 멈춘다.
+      - name: Test
+        run: |
+          npm test
+          npm run test:e2e
+          npx tsc -p tsconfig.build.json --noEmit
+          npx eslint "{src,apps,libs,test}/**/*.ts"
+          node test/deploy-workflow.check.cjs
+
+      - name: Build
+        run: |
+          npm run build
+
+      - name: Package
+        if: github.event_name != 'pull_request'
+        run: |
+          npm prune --omit=dev
+          tar czf release.tar.gz dist node_modules package.json
+
+      - name: Configure SSH
+        if: github.event_name != 'pull_request'
+        env:
+          SSH_KEY: ${{ secrets.EXPO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EXPO_SSH_KNOWN_HOSTS }}
+        run: |
+          : "${SSH_KEY:?Set EXPO_SSH_KEY}" "${KNOWN_HOSTS:?Set EXPO_SSH_KNOWN_HOSTS}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Upload and deploy
+        if: github.event_name != 'pull_request'
+        run: |
+          SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          RUNTIME_CHECK='JSON.stringify([process.platform, process.arch, process.versions.modules, process.report.getReport().header.glibcVersionRuntime || "musl"])'
+          LOCAL_RUNTIME=$(node -p "$RUNTIME_CHECK")
+          # 서버 PATH 의 node 는 시스템 Node 라서, Gateway 를 실제로 실행하는 배포 폴더의 Node 와 비교한다.
+          REMOTE_RUNTIME=$(ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "$REMOTE_ROOT/runtime/node/bin/node -p '$RUNTIME_CHECK'")
+          if [[ "$LOCAL_RUNTIME" != "$REMOTE_RUNTIME" ]]; then
+            echo 'Runner and deployment target must use the same platform, architecture, Node ABI and libc version.' >&2
+            exit 1
+          fi
+          REL="${GITHUB_SHA::12}-${GITHUB_RUN_ATTEMPT}"
+          scp "${SSH_OPTIONS[@]}" -P "$PORT" release.tar.gz "$USER@$HOST:$REMOTE_ROOT/app/$SVC/incoming/$REL.tar.gz"
+          ssh "${SSH_OPTIONS[@]}" -p "$PORT" "$USER@$HOST" "$REMOTE_ROOT/bin/deploy.sh $SVC $DEPLOY_ENV $REL"
