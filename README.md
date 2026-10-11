@@ -216,15 +216,19 @@ $ npm run test:cov
 
 ## Deployment
 
-GitHub Actions validates pull requests without packaging, SSH credentials or
-remote deployment. Pushes to `develop` deploy to dev; pushes to `main` deploy
-to prod. Documentation and local monitoring changes do not trigger push deploys.
+GitHub Actions (`.github/workflows/deploy.yml`) runs tests and the build for
+pull requests into `develop` or `main` without packaging, SSH credentials or
+remote deployment. **Only a push to `main` deploys** (or a manual
+`workflow_dispatch` on `main`); merging into `develop` deploys nothing. The
+server is a single environment, so there is no separate dev deployment.
+Documentation, `.claude/`, local monitoring and `docker-compose.yml` changes do
+not trigger a push deploy.
 
-Configure repository variables `EXPO_SSH_HOST`, `EXPO_SSH_PORT`,
-`EXPO_SSH_USER`, `EXPO_REMOTE_ROOT_DEV` and `EXPO_REMOTE_ROOT_PROD`, plus
-secrets `EXPO_SSH_KEY` and `EXPO_SSH_KNOWN_HOSTS`. Root paths must be absolute
-and contain no whitespace or shell metacharacters. Missing deployment variables
-stop the job before installation; prod never falls back to the dev root.
+Configure repository variables `EXPO_SSH_HOST`, `EXPO_SSH_PORT` and
+`EXPO_SSH_USER`, plus secrets `EXPO_SSH_KEY` and `EXPO_SSH_KNOWN_HOSTS`. The
+remote root is fixed in the workflow; it must be absolute and contain no
+whitespace or shell metacharacters. Missing deployment settings stop the job
+before installation.
 The SSH target's Node must match the runner's platform, architecture, Node ABI
 and libc version before the bundled `node_modules` is uploaded. A mismatch
 stops deployment before release upload. Run the workflow regression check with
