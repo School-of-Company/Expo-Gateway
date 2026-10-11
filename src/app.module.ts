@@ -13,6 +13,7 @@ import { DEFAULT_RATE_LIMIT } from './config/gateway-config.defaults';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { MetricsModule } from './metrics/metrics.module';
 import { ProxyModule } from './proxy/proxy.module';
+import { DocsController } from './docs/docs.controller';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -66,7 +67,7 @@ import { HealthController } from './health/health.controller';
     }),
     ProxyModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, DocsController],
   providers: [
     // Registration order matters: Throttler rejects abusive traffic before
     // spending CPU on RS256 verification in JwtAuthGuard.

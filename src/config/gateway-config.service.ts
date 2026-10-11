@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  DocsConfig,
   GatewayConfig,
   RateLimitConfig,
   RoutingConfig,
@@ -36,6 +37,11 @@ export class GatewayConfigService {
         'PATCH /auth',
       ]
     );
+  }
+
+  /** 통합 API 문서 설정. 꺼져 있거나 없으면 `undefined`. */
+  getDocs(): DocsConfig | undefined {
+    return this.config.docs?.enabled ? this.config.docs : undefined;
   }
 
   getPort(): number | undefined {
