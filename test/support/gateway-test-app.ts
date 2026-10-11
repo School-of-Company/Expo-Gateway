@@ -12,10 +12,12 @@ import {
   resetGatewayConfigForTests,
 } from '../../src/bootstrap/gateway-config-holder';
 import type { GatewayConfig } from '../../src/bootstrap/gateway-config.types';
+import { UPSTREAM_TIMEOUT_MS } from '../../src/proxy/upstream-timeout';
 
 export interface TestAppOptions {
   gatewayConfig: GatewayConfig;
   eurekaInstances?: EurekaInstance[] | (() => Promise<EurekaInstance[]>);
+  upstreamTimeoutMs?: number;
 }
 
 export async function createTestApp(
@@ -34,10 +36,15 @@ export async function createTestApp(
     }),
   };
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(EurekaService)
-    .useValue(fakeEurekaService)
-    .compile();
+    .useValue(fakeEurekaService);
+  if (options.upstreamTimeoutMs !== undefined) {
+    builder = builder
+      .overrideProvider(UPSTREAM_TIMEOUT_MS)
+      .useValue(options.upstreamTimeoutMs);
+  }
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication(GATEWAY_APP_OPTIONS);
   await app.init();
