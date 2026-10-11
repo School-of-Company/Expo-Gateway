@@ -32,6 +32,77 @@ function isPositiveIntegerPolicy(value: unknown): boolean {
   );
 }
 
+export const DOCS_MAX_SERVICES = 30;
+const DOCS_MAX_TEXT_LENGTH = 100;
+
+/**
+ * 게이트웨이 기준 경로만 허용한다: `/` 로 시작하고, `//`(프로토콜 상대 URL),
+ * `://`(스킴), 역슬래시, 공백/제어문자를 포함하지 않는다. 외부 호스트를
+ * 가리킬 수 없게 하려는 것이다.
+ */
+function isGatewayRelativePath(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.startsWith('/') &&
+    !value.includes('//') &&
+    !value.includes('://') &&
+    !/[\\\s]/.test(value) &&
+    ![...value].some(
+      (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
+    )
+  );
+}
+
+function validateDocs(raw: unknown): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new InvalidGatewayConfigError('docs must be an object when present');
+  }
+  const docs = raw as Record<string, unknown>;
+  if (typeof docs.enabled !== 'boolean') {
+    throw new InvalidGatewayConfigError('docs.enabled must be a boolean');
+  }
+  if (!docs.enabled) {
+    return;
+  }
+  if (
+    docs.title !== undefined &&
+    (!isNonEmptyString(docs.title) || docs.title.length > DOCS_MAX_TEXT_LENGTH)
+  ) {
+    throw new InvalidGatewayConfigError(
+      `docs.title must be a non-empty string of at most ${DOCS_MAX_TEXT_LENGTH} characters when present`,
+    );
+  }
+  const { services } = docs;
+  if (
+    !Array.isArray(services) ||
+    services.length === 0 ||
+    services.length > DOCS_MAX_SERVICES
+  ) {
+    throw new InvalidGatewayConfigError(
+      `docs.services must be a non-empty array of at most ${DOCS_MAX_SERVICES} entries when docs is enabled`,
+    );
+  }
+  for (const service of services as unknown[]) {
+    const entry =
+      typeof service === 'object' && service !== null
+        ? (service as Record<string, unknown>)
+        : {};
+    if (
+      !isNonEmptyString(entry.name) ||
+      entry.name.length > DOCS_MAX_TEXT_LENGTH
+    ) {
+      throw new InvalidGatewayConfigError(
+        `docs.services[].name must be a non-empty string of at most ${DOCS_MAX_TEXT_LENGTH} characters`,
+      );
+    }
+    if (!isGatewayRelativePath(entry.url)) {
+      throw new InvalidGatewayConfigError(
+        'docs.services[].url must be a gateway path starting with "/" (no "//", scheme, host, backslash or whitespace)',
+      );
+    }
+  }
+}
+
 /**
  * Structural validation only — this is boot-time config from a trusted
  * internal Config Server, not user input, so we check shape, not content.
@@ -114,6 +185,10 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
         'publicPaths must be an array of "/prefix" or "METHOD /path" strings',
       );
     }
+  }
+
+  if (candidate.docs !== undefined) {
+    validateDocs(candidate.docs);
   }
 
   if (candidate.port !== undefined && typeof candidate.port !== 'number') {

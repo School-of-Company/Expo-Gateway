@@ -158,4 +158,77 @@ describe('parseGatewayConfig', () => {
       }),
     ).not.toThrow();
   });
+  describe('docs', () => {
+    const docs = (overrides: Record<string, unknown> = {}) => ({
+      ...valid,
+      docs: {
+        enabled: true,
+        title: 'Expo API 문서',
+        services: [{ name: '참여', url: '/attendance/v3/api-docs' }],
+        ...overrides,
+      },
+    });
+
+    it('docs가 없거나 꺼져 있으면 services를 검사하지 않는다', () => {
+      expect(() => parseGatewayConfig(valid)).not.toThrow();
+      expect(() =>
+        parseGatewayConfig({ ...valid, docs: { enabled: false } }),
+      ).not.toThrow();
+    });
+
+    it('올바른 설정을 받아들인다', () => {
+      expect(() => parseGatewayConfig(docs())).not.toThrow();
+    });
+
+    it.each([
+      ['enabled 누락', { enabled: undefined }],
+      ['enabled가 문자열', { enabled: 'true' }],
+      ['services 누락', { services: undefined }],
+      ['services가 빈 배열', { services: [] }],
+      ['services가 배열이 아님', { services: { name: 'a', url: '/a' } }],
+      ['name이 빈 문자열', { services: [{ name: '', url: '/a' }] }],
+      ['name이 문자열이 아님', { services: [{ name: 1, url: '/a' }] }],
+      ['url 누락', { services: [{ name: 'a' }] }],
+      ['url이 /로 시작하지 않음', { services: [{ name: 'a', url: 'a/b' }] }],
+      [
+        '외부 스킴',
+        { services: [{ name: 'a', url: 'https://evil.example/x' }] },
+      ],
+      [
+        '프로토콜 상대 URL',
+        { services: [{ name: 'a', url: '//evil.example/x' }] },
+      ],
+      ['경로 안의 //', { services: [{ name: 'a', url: '/a//b' }] }],
+      ['역슬래시', { services: [{ name: 'a', url: '/\\evil.example' }] }],
+      ['공백', { services: [{ name: 'a', url: '/a b' }] }],
+      ['title이 빈 문자열', { title: '' }],
+      [
+        '31개 초과',
+        {
+          services: Array.from({ length: 31 }, (_, i) => ({
+            name: `s${i}`,
+            url: `/s${i}/v3/api-docs`,
+          })),
+        },
+      ],
+    ])('거부한다: %s', (_label, overrides) => {
+      expect(() => parseGatewayConfig(docs(overrides))).toThrow(
+        InvalidGatewayConfigError,
+      );
+    });
+
+    it('30개까지는 받아들인다', () => {
+      const services = Array.from({ length: 30 }, (_, i) => ({
+        name: `s${i}`,
+        url: `/s${i}/v3/api-docs`,
+      }));
+      expect(() => parseGatewayConfig(docs({ services }))).not.toThrow();
+    });
+
+    it('docs가 객체가 아니면 거부한다', () => {
+      expect(() => parseGatewayConfig({ ...valid, docs: 'on' })).toThrow(
+        InvalidGatewayConfigError,
+      );
+    });
+  });
 });

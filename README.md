@@ -62,6 +62,51 @@ Public SMS methods and profile settings belong to
 Adding this Gateway capability alone does not enable the SMS policy or make
 SMS endpoints public.
 
+### Integrated API docs (`/docs`)
+
+An optional `docs` section turns on one Swagger UI page that lists every
+service's OpenAPI document in a dropdown. It is off unless `docs.enabled` is
+`true`; when off (or absent) `/docs` is not served and nothing else changes.
+
+```yaml
+docs:
+  enabled: true
+  title: Expo API 문서   # optional, default "API 문서"
+  services:
+    - name: 참여
+      url: /attendance/v3/api-docs
+```
+
+- `services` is required when enabled: 1 to 30 entries of `{name, url}`. `name`
+  is a non-empty string; `url` must be a gateway path starting with `/` (no
+  `//`, scheme, host, backslash or whitespace), so it can never point at an
+  external host. An invalid section fails boot validation.
+- The gateway serves the page itself (`GET /docs`, `/docs/config.json`,
+  `/docs/swagger-initializer.js`, `/docs/assets/*` from the `swagger-ui-dist`
+  package), with no CDN, so it works offline. Service values reach the page only
+  as JSON from `/docs/config.json`; nothing is interpolated into HTML or script.
+- `GET`/`HEAD` on `/docs` and below skip JWT only while `docs.enabled` is true.
+  Every other path keeps its current rules, and `/docs` is never proxied.
+  A `docs` section with `enabled: false` leaves `/docs` as an ordinary unknown
+  path (401 without a token, 404 with one, as before).
+- Docs requests share the default per-IP rate limit; there is no separate budget.
+
+Path convention: each service serves its OpenAPI JSON under its own gateway
+prefix as `/{prefix}/v3/api-docs` (for example `/attendance/v3/api-docs`).
+The gateway proxies it like any request; it does not rewrite paths.
+The service documents are **not** opened by gateway code. Add a
+method-qualified entry per document to `publicPaths` in Config Server, for
+example `GET /attendance/v3/api-docs` (a method-qualified entry opens exactly
+that path, not its sub-paths).
+
+To add a service: have it expose `/{prefix}/v3/api-docs`, add
+`GET /{prefix}/v3/api-docs` to `publicPaths`, and append `{name, url}` to
+`docs.services`, all in the same Config Server profile file.
+
+Exposure warning: this page and the public OpenAPI paths show every service's
+API surface to anyone who can reach the gateway. Enable it in the dev profile
+only; leave `docs` out of production unless the exposure is a deliberate decision.
+
 ### Shared monitoring responsibilities
 
 Gateway keeps its `gateway_http_*` metrics, dedicated metrics listener and

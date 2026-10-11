@@ -1,5 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { GatewayConfigService } from '../config/gateway-config.service';
+import { isDocsPath } from '../docs/docs.paths';
 import { MetricsService } from '../metrics/metrics.service';
 import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
@@ -14,6 +16,7 @@ export class HttpMetricsMiddleware implements NestMiddleware {
   constructor(
     private readonly metrics: MetricsService,
     private readonly routeResolver: RouteResolverService,
+    private readonly gatewayConfig: GatewayConfigService,
   ) {}
 
   use(req: Request, res: Response, next: NextFunction): void {
@@ -45,7 +48,10 @@ export class HttpMetricsMiddleware implements NestMiddleware {
   // the middleware.
   private appLabel(req: Request): string {
     const path = req.originalUrl.split('?')[0];
-    if (isGatewayOwnedPath(path)) {
+    if (
+      isGatewayOwnedPath(path) ||
+      (this.gatewayConfig.getDocs() && isDocsPath(path))
+    ) {
       return 'gateway';
     }
     return this.routeResolver.resolve(path) ?? 'unmatched';

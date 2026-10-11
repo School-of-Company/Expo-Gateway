@@ -25,15 +25,31 @@ function makeContext(
   } as unknown as ExecutionContext;
 }
 
-function makeGuard(publicPaths: string[] = []): JwtAuthGuard {
+function makeGuard(
+  publicPaths: string[] = [],
+  docsEnabled = false,
+): JwtAuthGuard {
   const gatewayConfig = {
     getPublicPaths: () => publicPaths,
+    getDocs: () => (docsEnabled ? { enabled: true } : undefined),
     getJwtPublicKey: () => publicKeyPem,
   } as unknown as GatewayConfigService;
   return new JwtAuthGuard(gatewayConfig);
 }
 
 describe('JwtAuthGuard', () => {
+  it('docs가 켜져 있을 때만 /docs 조회를 토큰 없이 통과시킨다', () => {
+    expect(
+      makeGuard([], true).canActivate(makeContext('/docs/config.json', {})),
+    ).toBe(true);
+    expect(() =>
+      makeGuard([], false).canActivate(makeContext('/docs', {})),
+    ).toThrow(UnauthorizedException);
+    expect(() =>
+      makeGuard([], true).canActivate(makeContext('/docs', {}, 'POST')),
+    ).toThrow(UnauthorizedException);
+  });
+
   it('allows a public path through without a token', () => {
     const guard = makeGuard(['/auth']);
     expect(guard.canActivate(makeContext('/auth/login', {}))).toBe(true);
