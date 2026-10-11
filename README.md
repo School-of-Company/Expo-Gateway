@@ -62,6 +62,66 @@ Public SMS methods and profile settings belong to
 Adding this Gateway capability alone does not enable the SMS policy or make
 SMS endpoints public.
 
+### Participant browser flows (cookies, CORS, CSRF)
+
+Participant phone auth (User Server `/participant-auth/**`, Gateway #25) and the
+Application participant APIs (Gateway #29) authenticate with the HttpOnly
+`PARTICIPANT_SESSION` cookie, not a JWT. Gateway support:
+
+- **Dynamic public paths.** A method-qualified `publicPaths` entry may use
+  whole-segment placeholders, e.g.
+  `POST /application/expos/{expoId}/my-applications/{type:PREREGISTER|STANDARD|TRAINING}/{applicationId}/cancellation`.
+  `{name}` matches one id (a decimal number or a UUID); `{name:A|B}` matches
+  exactly one listed value. An arbitrary word never matches, so
+  `POST /application/{expoId}` does not open `POST /application/admin`. The
+  method, the segment count and every literal segment must match; `.`/`..`,
+  `%`-encoded and `;` values never match. Plain (`/prefix`) entries cannot use braces.
+- **Pass-through.** `Cookie` (`PARTICIPANT_SESSION`, `JSESSIONID`,
+  `XSRF-TOKEN`), every `Set-Cookie` with its attributes, `X-CSRF-TOKEN`,
+  `X-XSRF-TOKEN`, `Idempotency-Key` and upstream status codes/bodies
+  (401/403/409/429/503 ...) are forwarded unchanged. The gateway never rewrites
+  cookie `Domain`/`Path`; User Server owns them via `PARTICIPANT_SESSION_COOKIE_*`.
+- **Internal APIs are never exposed.** Any path with an `internal` segment, or a
+  `.`/`..` segment, after percent-decoding (`/internal/**`, `/x/..%2finternal`,
+  `/%69nternal`) returns 404 without being forwarded, even if a routing prefix
+  would match and even with a valid JWT (without a JWT a protected path still
+  answers 401 first). A path whose percent-encoding cannot be decoded (`/a/100%`)
+  is answered 404 the same way. A client-sent `X-Internal-Token` is removed
+  before proxying.
+- **Credentialed CORS** (optional, off when absent):
+
+  ```yaml
+  cors:
+    allowedOrigins:
+      - https://expo.example.com   # exact scheme://host[:port], no "*", no path
+  ```
+
+  An allowed `Origin` is echoed with `Access-Control-Allow-Credentials: true`
+  and `Vary: Origin`; preflights are answered by the gateway (204, methods
+  `GET POST PUT PATCH DELETE`, headers `Authorization Content-Type X-CSRF-TOKEN
+  X-XSRF-TOKEN Idempotency-Key`, max-age 600) and never reach a backend;
+  `X-CSRF-TOKEN` is exposed to the page. Upstream `Access-Control-*` headers are
+  dropped so the gateway is the single CORS owner. Invalid origins fail boot.
+- **CSRF (gateway half).** With `cors` set, a POST/PUT/PATCH/DELETE whose
+  `Origin` is present but not allowed gets 403 before it is forwarded or
+  rate-limited. Requests without `Origin` (a server-side BFF, curl) pass.
+  Same-origin pages served by the gateway itself (the `/docs` "Try it out")
+  also send `Origin`, so list the gateway's own origin too if that is used.
+  Backends keep their own checks: Application requires `X-CSRF-TOKEN` +
+  `JSESSIONID` (my-applications cancel) or `X-XSRF-TOKEN` + `XSRF-TOKEN`
+  (program sessions). The `PARTICIPANT_SESSION` cookie should stay
+  `SameSite=Lax` while the front and API are same-site; cross-site needs
+  `SameSite=None; Secure` plus this Origin check.
+- **SMS abuse.** `rateLimit.participantAuthCode` (same shape as `survey`)
+  budgets `POST /participant-auth/code` per client IP (encoded / `;` variants
+  included) and returns 429 with `Retry-After-participantAuthCode` (exposed to
+  allowed origins). The per-phone-number limit belongs to
+  User Server / Notification Server (the gateway never reads bodies).
+
+The public path list, the `/participant-auth` routing prefix, `cors` and
+`participantAuthCode` values live in Config Server `gateway-{profile}.yml`; this
+gateway change alone opens nothing.
+
 ### Integrated API docs (`/docs`)
 
 An optional `docs` section turns on one Swagger UI page that lists every

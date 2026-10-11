@@ -44,6 +44,11 @@ export class GatewayConfigService {
     return this.config.docs?.enabled ? this.config.docs : undefined;
   }
 
+  /** Exact allowed browser origins; `undefined` turns CORS and the `Origin` check off. */
+  getCorsAllowedOrigins(): readonly string[] | undefined {
+    return this.config.cors?.allowedOrigins;
+  }
+
   getPort(): number | undefined {
     return this.config.port;
   }

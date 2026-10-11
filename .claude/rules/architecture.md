@@ -11,6 +11,7 @@ src/
 ├── proxy/         — The catch-all controller, route resolution, load balancing/instance selection,
 │                    request-metrics middleware, background Eureka poller.
 ├── metrics/       — MetricsService (prom-client registry) + the separate-port /metrics server.
+├── cors/          — Credentialed CORS + Origin check on writes (middleware, before guards).
 └── health/        — GET /health only. Nothing else belongs here.
 ```
 
@@ -115,6 +116,8 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 | Instance reachable per Eureka but connection fails at actual proxy time | 502 (`on.error` hook) |
 | Missing/invalid/expired/wrong-algorithm JWT on a non-public path | 401 |
 | Rate limit exceeded | 429 (`@nestjs/throttler`'s own response) |
+| Path with an `internal` or `.`/`..` segment (after percent-decoding) | 404, never forwarded (`proxy/blocked-paths.ts`) |
+| `cors` set and a POST/PUT/PATCH/DELETE or preflight carries a non-allowed `Origin` | 403 (`cors/cors.middleware.ts`) |
 | Config Server fetch fails at boot (network error, or its own 404/503) | process exits — nothing served |
 
 No retry, backoff, or circuit-breaker anywhere in this table. This mirrors the Config Server's own
