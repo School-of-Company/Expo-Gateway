@@ -1,6 +1,8 @@
 import { All, Controller, Next, Req, Res } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { GatewayConfigService } from '../config/gateway-config.service';
+import { isDocsPath } from '../docs/docs.paths';
 import { MetricsService } from '../metrics/metrics.service';
 import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
@@ -53,6 +55,7 @@ export class ProxyController {
     private readonly routeResolver: RouteResolverService,
     private readonly loadBalancer: LoadBalancerService,
     private readonly metrics: MetricsService,
+    private readonly gatewayConfig: GatewayConfigService,
   ) {}
 
   // Express 5 (path-to-regexp v8) rejects the bare '*' wildcard used in
@@ -63,7 +66,10 @@ export class ProxyController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ): Promise<void> {
-    if (isGatewayOwnedPath(req.path)) {
+    if (
+      isGatewayOwnedPath(req.path) ||
+      (this.gatewayConfig.getDocs() && isDocsPath(req.path))
+    ) {
       next();
       return;
     }

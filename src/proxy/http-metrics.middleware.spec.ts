@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { NextFunction, Request, Response } from 'express';
 import { MetricsService } from '../metrics/metrics.service';
 import { HttpMetricsMiddleware } from './http-metrics.middleware';
+import type { GatewayConfigService } from '../config/gateway-config.service';
 import type { RouteResolverService } from './route-resolver.service';
 
 class FakeResponse extends EventEmitter {
@@ -9,10 +10,15 @@ class FakeResponse extends EventEmitter {
   writableFinished = false;
 }
 
-function setup(resolve: (path: string) => string | undefined = () => 'a') {
+function setup(
+  resolve: (path: string) => string | undefined = () => 'a',
+  docsEnabled = false,
+) {
   const metrics = new MetricsService();
   const resolver = { resolve } as unknown as RouteResolverService;
-  const middleware = new HttpMetricsMiddleware(metrics, resolver);
+  const middleware = new HttpMetricsMiddleware(metrics, resolver, {
+    getDocs: () => (docsEnabled ? { enabled: true } : undefined),
+  } as unknown as GatewayConfigService);
   const res = new FakeResponse();
   const next = jest.fn() as NextFunction;
   const run = (url: string, method = 'GET') =>

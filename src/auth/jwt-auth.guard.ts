@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { isPublicDocsRequest } from '../docs/docs.paths';
 import { GatewayConfigService } from '../config/gateway-config.service';
 import { isPublicPath } from './public-path.matcher';
 import { verifyAccessToken } from './jwt-verify';
@@ -34,6 +35,11 @@ export class JwtAuthGuard implements CanActivate {
     delete request.headers[USER_ROLE_HEADER];
 
     if (
+      isPublicDocsRequest(
+        this.gatewayConfig.getDocs() !== undefined,
+        request.path,
+        request.method,
+      ) ||
       isPublicPath(
         request.path,
         this.gatewayConfig.getPublicPaths(),
