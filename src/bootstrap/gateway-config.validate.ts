@@ -153,13 +153,10 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     if (
       typeof rateLimit !== 'object' ||
       rateLimit === null ||
-      !('ttlSeconds' in rateLimit) ||
-      !('limit' in rateLimit) ||
-      typeof rateLimit.ttlSeconds !== 'number' ||
-      typeof rateLimit.limit !== 'number'
+      !isPositiveIntegerPolicy(rateLimit)
     ) {
       throw new InvalidGatewayConfigError(
-        'rateLimit.ttlSeconds and rateLimit.limit must be numbers when rateLimit is present',
+        'rateLimit.ttlSeconds and rateLimit.limit must be positive safe integers when rateLimit is present',
       );
     }
     const policies: Record<string, unknown> = {
