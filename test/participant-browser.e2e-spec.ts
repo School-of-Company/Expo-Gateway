@@ -34,6 +34,9 @@ const PUBLIC_PATHS = [
   'POST /application/expos/{expoId}/program-sessions/{programType:STANDARD|TRAINING}/{programId}/applications',
   'GET /application/expos/{expoId}/my-applications',
   'POST /application/expos/{expoId}/my-applications/{type:PREREGISTER|STANDARD|TRAINING}/{applicationId}/cancellation',
+  // Application #75: managed-party list and QR, participant session cookie only.
+  'GET /application/expos/{expoId}/program-sessions/{programType:STANDARD|TRAINING}/{programId}/participants',
+  'GET /application/expos/{expoId}/participants/{participantId}/qr',
 ];
 
 const { publicKey, privateKey } = generateKeyPairSync('rsa', {
@@ -296,6 +299,41 @@ describe('Participant browser flows (e2e)', () => {
 
       expect(res.status).toBe(404);
       expect(seen).toHaveLength(0);
+    });
+
+    it('opens the #75 participant list and QR GETs with the session cookie only', async () => {
+      const server = getHttpServer(app);
+      const expo = '0f8fad5b-d9cb-469f-a165-70867728950e';
+      const list = await request(server)
+        .get(
+          `/application/expos/${expo}/program-sessions/TRAINING/5/participants`,
+        )
+        .set('Origin', FRONT)
+        .set('Cookie', 'PARTICIPANT_SESSION=s1');
+      const qr = await request(server)
+        .get(`/application/expos/${expo}/participants/1/qr`)
+        .set('Cookie', 'PARTICIPANT_SESSION=s1');
+
+      expect([list.status, qr.status]).toEqual([200, 200]);
+      expect(seen.map((s) => s.headers.cookie)).toEqual([
+        'PARTICIPANT_SESSION=s1',
+        'PARTICIPANT_SESSION=s1',
+      ]);
+      for (const path of [
+        `/application/expos/${expo}/participants/abc/qr`,
+        `/application/expos/${expo}/program-sessions/LECTURE/5/participants`,
+        `/application/expos/${expo}/participants/1/qr/extra`,
+      ]) {
+        expect((await request(server).get(path)).status).toBe(401);
+      }
+      expect(
+        (
+          await request(server).delete(
+            `/application/expos/${expo}/participants/1/qr`,
+          )
+        ).status,
+      ).toBe(401);
+      expect(seen).toHaveLength(2);
     });
 
     it('opens only the listed methods and shapes of the dynamic public paths', async () => {
