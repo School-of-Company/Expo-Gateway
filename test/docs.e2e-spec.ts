@@ -29,11 +29,13 @@ describe('통합 API 문서 /docs (e2e)', () => {
   let stub: http.Server;
   let stubPort: number;
   const upstreamPaths: string[] = [];
+  const upstreamAuthorization: Array<string | undefined> = [];
   let app: INestApplication | undefined;
 
   beforeAll((done) => {
     stub = http.createServer((req, res) => {
       upstreamPaths.push(`${req.method} ${req.url}`);
+      upstreamAuthorization.push(req.headers['authorization']);
       if (req.headers['accept-encoding']?.includes('gzip')) {
         res.writeHead(200, {
           'Content-Type': 'application/json',
@@ -57,6 +59,7 @@ describe('통합 API 문서 /docs (e2e)', () => {
 
   beforeEach(() => {
     upstreamPaths.length = 0;
+    upstreamAuthorization.length = 0;
   });
 
   afterEach(async () => {
@@ -123,6 +126,7 @@ describe('통합 API 문서 /docs (e2e)', () => {
       expect(res.body).toEqual({
         title: 'Expo API 문서',
         services: [{ name: '참여', url: '/attendance/v3/api-docs' }],
+        tryItOut: true,
       });
     });
 
@@ -270,6 +274,121 @@ describe('통합 API 문서 /docs (e2e)', () => {
         ).status,
       ).toBe(404);
       expect((await request(server).get('/health')).status).toBe(200);
+    });
+  });
+
+  describe('docs.basicAuth를 설정했을 때(운영)', () => {
+    const basicAuth = {
+      username: 'docs-reader',
+      password: 'correct-horse-battery',
+    };
+    const protectedDocs: GatewayConfig['docs'] = {
+      ...enabledDocs,
+      basicAuth,
+      requireAuth: true,
+      tryItOut: false,
+    };
+    const basic = (user: string, password: string) =>
+      `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`;
+    const valid = () => basic(basicAuth.username, basicAuth.password);
+
+    it('자격 증명이 없으면 화면·설정·서비스 문서 모두 401이고 기본 인증창을 요청하며 서비스로 가지 않는다', async () => {
+      const server = await start(protectedDocs);
+      for (const path of [
+        '/docs',
+        '/docs/config.json',
+        '/docs/swagger-initializer.js',
+        '/docs/assets/swagger-ui.css',
+        '/attendance/v3/api-docs',
+      ]) {
+        const res = await request(server).get(path);
+        expect(res.status).toBe(401);
+        expect(res.headers['www-authenticate']).toBe(
+          'Basic realm="docs", charset="UTF-8"',
+        );
+        expect(res.text).not.toContain('swagger-ui');
+        expect(res.text).not.toContain(basicAuth.password);
+      }
+      expect(upstreamPaths).toEqual([]);
+    });
+
+    it('틀린 사용자 이름이나 비밀번호와 JWT는 401이다', async () => {
+      const server = await start(protectedDocs);
+      for (const header of [
+        basic(basicAuth.username, 'wrong-password-123'),
+        basic('someone-else', basicAuth.password),
+        basic('', ''),
+        'Basic !!!not-base64!!!',
+        'Basic ' + Buffer.from('no-colon').toString('base64'),
+        bearer(),
+      ]) {
+        expect(
+          (await request(server).get('/docs').set('Authorization', header))
+            .status,
+        ).toBe(401);
+      }
+    });
+
+    it('올바른 자격 증명이면 화면과 설정과 서비스 문서가 열린다', async () => {
+      const server = await start(protectedDocs);
+      const page = await request(server)
+        .get('/docs')
+        .set('Authorization', valid());
+      expect(page.status).toBe(200);
+      expect(page.text).toContain('swagger-ui');
+      const config = await request(server)
+        .get('/docs/config.json')
+        .set('Authorization', valid());
+      expect(config.status).toBe(200);
+      expect((config.body as { tryItOut: boolean }).tryItOut).toBe(false);
+      const spec = await request(server)
+        .get('/attendance/v3/api-docs')
+        .set('Authorization', valid());
+      expect(spec.status).toBe(200);
+      expect(upstreamPaths).toEqual(['GET /attendance/v3/api-docs']);
+    });
+
+    it('서비스로 전달되는 문서 요청에는 문서 자격 증명을 싣지 않는다', async () => {
+      const server = await start(protectedDocs);
+      await request(server)
+        .get('/attendance/v3/api-docs')
+        .set('Authorization', valid());
+      expect(upstreamAuthorization).toEqual([undefined]);
+    });
+
+    it('publicPaths에 서비스 문서가 있어도 자격 증명 없이는 열리지 않는다', async () => {
+      const server = await start(protectedDocs);
+      // start()의 publicPaths에는 GET /attendance/v3/api-docs 가 들어 있다
+      expect(
+        (await request(server).get('/attendance/v3/api-docs')).status,
+      ).toBe(401);
+    });
+
+    it('문서 자격 증명으로는 다른 API를 쓸 수 없고 쓰기 요청도 JWT가 필요하다', async () => {
+      const server = await start(protectedDocs);
+      expect(
+        (
+          await request(server)
+            .get('/attendance/entries')
+            .set('Authorization', valid())
+        ).status,
+      ).toBe(401);
+      expect(
+        (await request(server).post('/docs').set('Authorization', valid()))
+          .status,
+      ).toBe(401);
+      expect(upstreamPaths).toEqual([]);
+    });
+
+    it('JWT가 있어도 문서 JSON은 문서 자격 증명이 필요하다', async () => {
+      const server = await start(protectedDocs);
+      expect(
+        (
+          await request(server)
+            .get('/attendance/v3/api-docs')
+            .set('Authorization', bearer())
+        ).status,
+      ).toBe(401);
     });
   });
 });

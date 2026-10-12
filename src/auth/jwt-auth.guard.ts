@@ -4,8 +4,9 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Request } from 'express';
-import { isPublicDocsRequest } from '../docs/docs.paths';
+import type { Request, Response } from 'express';
+import { DOCS_REALM, matchesDocsBasicAuth } from '../docs/docs-basic-auth';
+import { isDocsResourceRequest, isPublicDocsRequest } from '../docs/docs.paths';
 import { GatewayConfigService } from '../config/gateway-config.service';
 import { isPublicPath } from './public-path.matcher';
 import { verifyAccessToken } from './jwt-verify';
@@ -33,6 +34,33 @@ export class JwtAuthGuard implements CanActivate {
 
     delete request.headers[USER_ID_HEADER];
     delete request.headers[USER_ROLE_HEADER];
+
+    const docs = this.gatewayConfig.getDocs();
+    if (
+      docs?.basicAuth &&
+      isDocsResourceRequest(
+        (docs.services ?? []).map((service) => service.url),
+        request.path,
+        request.method,
+      )
+    ) {
+      // 문서 요청은 JWT 대신 문서 전용 자격 증명만 받는다. 서비스로 전달되는 JSON
+      // 요청에 자격 증명이 새지 않도록 헤더를 지운다.
+      if (
+        !matchesDocsBasicAuth(request.headers['authorization'], docs.basicAuth)
+      ) {
+        context
+          .switchToHttp()
+          .getResponse<Response>()
+          .setHeader(
+            'WWW-Authenticate',
+            `Basic realm="${DOCS_REALM}", charset="UTF-8"`,
+          );
+        throw new UnauthorizedException();
+      }
+      delete request.headers['authorization'];
+      return true;
+    }
 
     if (
       isPublicDocsRequest(
