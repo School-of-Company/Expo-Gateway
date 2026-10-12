@@ -47,7 +47,10 @@ export async function createTestApp(
   const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication(GATEWAY_APP_OPTIONS);
-  await app.init();
+  // Bind 127.0.0.1 ourselves: supertest's own `listen(0)` binds `::` but
+  // connects to 127.0.0.1, so another process listening on 127.0.0.1 with the
+  // same port number would answer instead of this app (#41).
+  await app.listen(0, '127.0.0.1');
   return app;
 }
 
