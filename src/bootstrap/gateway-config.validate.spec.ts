@@ -285,6 +285,66 @@ describe('parseGatewayConfig', () => {
       expect(() => parseGatewayConfig(docs({ services }))).not.toThrow();
     });
 
+    describe('docs.basicAuth', () => {
+      const auth = {
+        username: 'docs-reader',
+        password: 'correct-horse-battery',
+      };
+
+      it('올바른 자격 증명과 tryItOut=false를 받는다', () => {
+        expect(() =>
+          parseGatewayConfig(
+            docs({ basicAuth: auth, requireAuth: true, tryItOut: false }),
+          ),
+        ).not.toThrow();
+      });
+
+      it('requireAuth인데 basicAuth가 없으면 부팅하지 못한다(비밀이 빠져도 문서가 열리지 않게)', () => {
+        expect(() => parseGatewayConfig(docs({ requireAuth: true }))).toThrow(
+          'docs.basicAuth is required when docs.requireAuth is true',
+        );
+      });
+
+      it('requireAuth가 아니고 basicAuth도 없으면 지금처럼 인증 없이 통과한다', () => {
+        expect(() => parseGatewayConfig(docs())).not.toThrow();
+      });
+
+      it.each([
+        [{ username: '', password: 'correct-horse-battery' }],
+        [{ username: 'a:b', password: 'correct-horse-battery' }],
+        [{ username: 'docs-reader', password: 'short' }],
+        [{ username: 'docs-reader' }],
+        ['docs-reader:correct-horse-battery'],
+        [null],
+      ])('잘못된 자격 증명 형식은 거부한다 (%j)', (basicAuth) => {
+        expect(() => parseGatewayConfig(docs({ basicAuth }))).toThrow(
+          /docs\.basicAuth\.(username|password)/,
+        );
+      });
+
+      it('오류 메시지에 비밀번호를 싣지 않는다', () => {
+        try {
+          parseGatewayConfig(
+            docs({
+              basicAuth: { username: 'a:b', password: 'secret-password-1' },
+            }),
+          );
+          throw new Error('should have thrown');
+        } catch (error) {
+          expect((error as Error).message).not.toContain('secret-password-1');
+        }
+      });
+
+      it('tryItOut과 requireAuth는 불리언이어야 한다', () => {
+        expect(() => parseGatewayConfig(docs({ tryItOut: 'no' }))).toThrow(
+          'docs.tryItOut must be a boolean',
+        );
+        expect(() => parseGatewayConfig(docs({ requireAuth: 'yes' }))).toThrow(
+          'docs.requireAuth must be a boolean',
+        );
+      });
+    });
+
     it('docs가 객체가 아니면 거부한다', () => {
       expect(() => parseGatewayConfig({ ...valid, docs: 'on' })).toThrow(
         InvalidGatewayConfigError,

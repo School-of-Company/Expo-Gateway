@@ -24,21 +24,31 @@ const INDEX_HTML = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${DEFAULT_TITLE}</title>
-    <link rel="icon" type="image/png" href="/docs/assets/favicon-32x32.png" />
-    <link rel="stylesheet" href="/docs/assets/swagger-ui.css" />
+    <!-- 공개 주소가 /expo/ 같은 접두사 아래여도 아래 상대 경로가 맞도록 문서 기준 경로를 현재 주소에서 정한다. -->
+    <script>
+      document.write(
+        '<base href="' + location.pathname.replace(/\\/docs\\/?$/, '/') + '">',
+      );
+    </script>
+    <link rel="icon" type="image/png" href="docs/assets/favicon-32x32.png" />
+    <link rel="stylesheet" href="docs/assets/swagger-ui.css" />
   </head>
   <body>
     <div id="swagger-ui"></div>
-    <script src="/docs/assets/swagger-ui-bundle.js"></script>
-    <script src="/docs/assets/swagger-ui-standalone-preset.js"></script>
-    <script src="/docs/swagger-initializer.js"></script>
+    <script src="docs/assets/swagger-ui-bundle.js"></script>
+    <script src="docs/assets/swagger-ui-standalone-preset.js"></script>
+    <script src="docs/swagger-initializer.js"></script>
   </body>
 </html>
 `;
 
 const INITIALIZER_JS = `window.addEventListener('load', function () {
   var root = document.getElementById('swagger-ui');
-  fetch('/docs/config.json', { headers: { Accept: 'application/json' } })
+  // 공개 주소의 접두사(예: /expo). 문서 화면은 항상 <접두사>/docs 에 있다.
+  var prefix = new URL(window.location.href).pathname
+    .replace(/\\/docs\\/?$/, '')
+    .replace(/\\/$/, '');
+  fetch('docs/config.json', { headers: { Accept: 'application/json' } })
     .then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -46,8 +56,14 @@ const INITIALIZER_JS = `window.addEventListener('load', function () {
     .then(function (config) {
       document.title = config.title;
       window.ui = SwaggerUIBundle({
-        urls: config.services,
+        urls: config.services.map(function (service) {
+          return { name: service.name, url: prefix + service.url };
+        }),
         'urls.primaryName': config.services[0].name,
+        // 운영에서는 문서가 실제 데이터를 바꾸지 못하도록 Try it out을 끈다.
+        supportedSubmitMethods: config.tryItOut
+          ? ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']
+          : [],
         dom_id: '#swagger-ui',
         deepLinking: true,
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
@@ -104,6 +120,7 @@ export class DocsController {
     res.set('Cache-Control', 'no-store').json({
       title: docs.title ?? DEFAULT_TITLE,
       services: (docs.services ?? []).map(({ name, url }) => ({ name, url })),
+      tryItOut: docs.tryItOut ?? true,
     });
   }
 

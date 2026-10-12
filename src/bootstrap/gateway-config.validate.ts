@@ -56,6 +56,50 @@ function isGatewayRelativePath(value: unknown): value is string {
   );
 }
 
+const DOCS_AUTH_MIN_PASSWORD_LENGTH = 12;
+const DOCS_AUTH_MAX_LENGTH = 128;
+
+/** 비밀 값은 오류 메시지에 싣지 않는다. 어느 항목이 틀렸는지만 알린다. */
+function validateDocsAuth(docs: Record<string, unknown>): void {
+  if (docs.tryItOut !== undefined && typeof docs.tryItOut !== 'boolean') {
+    throw new InvalidGatewayConfigError('docs.tryItOut must be a boolean');
+  }
+  if (docs.requireAuth !== undefined && typeof docs.requireAuth !== 'boolean') {
+    throw new InvalidGatewayConfigError('docs.requireAuth must be a boolean');
+  }
+  const { basicAuth } = docs;
+  if (basicAuth === undefined) {
+    if (docs.requireAuth === true) {
+      throw new InvalidGatewayConfigError(
+        'docs.basicAuth is required when docs.requireAuth is true',
+      );
+    }
+    return;
+  }
+  const auth =
+    typeof basicAuth === 'object' && basicAuth !== null
+      ? (basicAuth as Record<string, unknown>)
+      : {};
+  if (
+    !isNonEmptyString(auth.username) ||
+    auth.username.length > DOCS_AUTH_MAX_LENGTH ||
+    auth.username.includes(':')
+  ) {
+    throw new InvalidGatewayConfigError(
+      `docs.basicAuth.username must be a non-empty string of at most ${DOCS_AUTH_MAX_LENGTH} characters without ":"`,
+    );
+  }
+  if (
+    !isNonEmptyString(auth.password) ||
+    auth.password.length < DOCS_AUTH_MIN_PASSWORD_LENGTH ||
+    auth.password.length > DOCS_AUTH_MAX_LENGTH
+  ) {
+    throw new InvalidGatewayConfigError(
+      `docs.basicAuth.password must be a string of ${DOCS_AUTH_MIN_PASSWORD_LENGTH} to ${DOCS_AUTH_MAX_LENGTH} characters`,
+    );
+  }
+}
+
 function validateDocs(raw: unknown): void {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new InvalidGatewayConfigError('docs must be an object when present');
@@ -75,6 +119,7 @@ function validateDocs(raw: unknown): void {
       `docs.title must be a non-empty string of at most ${DOCS_MAX_TEXT_LENGTH} characters when present`,
     );
   }
+  validateDocsAuth(docs);
   const { services } = docs;
   if (
     !Array.isArray(services) ||
