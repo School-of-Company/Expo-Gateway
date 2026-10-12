@@ -150,6 +150,19 @@ docs:
   A `docs` section with `enabled: false` leaves `/docs` as an ordinary unknown
   path (401 without a token, 404 with one, as before).
 - Docs requests share the default per-IP rate limit; there is no separate budget.
+  A `GET` of a URL listed in `docs.services` (e.g. `/sms/v3/api-docs`) does not
+  spend the `rateLimit.sms` budget, which is meant for sending SMS.
+- "Try it out" always calls the gateway origin the page was loaded from, even
+  when a service's OpenAPI `servers` holds its own instance address (springdoc
+  builds it from the proxied `Host`). Calls therefore go through JWT, routing
+  and the Origin check, and an `Authorize` token never leaves the gateway.
+  Spec and external `$ref` fetches are not rewritten; OAuth2 token URLs are not
+  supported (every service uses a bearer JWT).
+  Browsers send `Origin` on same-origin writes too: while `cors` is set, add the
+  gateway's own origin to `cors.allowedOrigins` or POST/PUT/PATCH/DELETE from
+  `/docs` get 403 (GET still works).
+  The Authorize button only appears for documents that declare a security
+  scheme (e.g. `bearerAuth`).
 
 Path convention: each service serves its OpenAPI JSON under its own gateway
 prefix as `/{prefix}/v3/api-docs` (for example `/attendance/v3/api-docs`).

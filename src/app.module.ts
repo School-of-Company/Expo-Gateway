@@ -37,8 +37,18 @@ import { HealthController } from './health/health.controller';
                 ttl: config.rateLimit.sms.ttlSeconds * 1000,
                 limit: config.rateLimit.sms.limit,
                 skipIf: (context: ExecutionContext) => {
-                  const { path } = context.switchToHttp().getRequest<Request>();
-                  return path !== '/sms' && !path.startsWith('/sms/');
+                  const { method, path } = context
+                    .switchToHttp()
+                    .getRequest<Request>();
+                  // The /docs page loading /sms/v3/api-docs sends no SMS.
+                  const isDocsFetch =
+                    method === 'GET' &&
+                    config.docs?.enabled === true &&
+                    (config.docs.services ?? []).some((s) => s.url === path);
+                  return (
+                    (path !== '/sms' && !path.startsWith('/sms/')) ||
+                    isDocsFetch
+                  );
                 },
               },
             ]

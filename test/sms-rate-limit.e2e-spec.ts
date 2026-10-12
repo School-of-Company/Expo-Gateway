@@ -123,6 +123,57 @@ describe('SMS IP limit (e2e)', () => {
     expect(hits).toBe(12);
   });
 
+  it('does not spend the SMS budget on the docs page loading /sms/v3/api-docs', async () => {
+    const config = app.get<GatewayConfig>(GATEWAY_CONFIG);
+    const address = upstream.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected an upstream TCP address');
+    }
+    const withDocs = async (docs: GatewayConfig['docs']) => {
+      await app.close();
+      app = await createTestApp({
+        gatewayConfig: {
+          ...config,
+          publicPaths: [
+            ...(config.publicPaths ?? []),
+            'GET /sms/v3/api-docs',
+            'GET /sms/v3/api-docs/notification',
+          ],
+          docs,
+        },
+        eurekaInstances: [instance({ port: address.port })],
+      });
+      return request.agent(getHttpServer(app));
+    };
+
+    let client = await withDocs({
+      enabled: true,
+      services: [
+        { name: '알림', url: '/sms/v3/api-docs' },
+        // springdoc group URL: 접미사와 관계없이 등록된 URL이면 면제된다.
+        { name: '알림(그룹)', url: '/sms/v3/api-docs/notification' },
+      ],
+    });
+    for (let i = 0; i < 15; i += 1) {
+      await client.get('/sms/v3/api-docs').expect(200);
+      await client.get('/sms/v3/api-docs/notification').expect(200);
+    }
+    await client.get('/sms/v3/api-docs?group=x').expect(200);
+    // Anything but the exact listed GET still counts against the SMS budget.
+    await client.get('/sms/v3/api-docs/').expect(200);
+    await client.head('/sms/v3/api-docs').expect(401);
+    for (let i = 0; i < 8; i += 1) {
+      await client.post('/sms').expect(200);
+    }
+    await client.post('/sms').expect(429);
+
+    client = await withDocs({ enabled: false });
+    for (let i = 0; i < 10; i += 1) {
+      await client.get('/sms/v3/api-docs').expect(200);
+    }
+    await client.get('/sms/v3/api-docs').expect(429);
+  });
+
   it.each([
     ['delete', '/sms'],
     ['head', '/sms'],
