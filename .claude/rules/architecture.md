@@ -45,7 +45,7 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 ## File Responsibilities
 
 - `bootstrap/env.ts`: reads `process.env` for boot-time values only (`CONFIG_SERVER_URL`,
-  `PROFILE`/`NODE_ENV`, `INSTANCE_HOSTNAME`, `INSTANCE_IP_ADDR`, `PORT`). Throws synchronously on
+  `CONFIG_SERVER_PASSWORD`, `PROFILE`/`NODE_ENV`, `INSTANCE_HOSTNAME`, `INSTANCE_IP_ADDR`, `PORT`). Throws synchronously on
   anything required and missing — no lazy failure on first request.
 - `bootstrap/fetch-gateway-config.ts`: the one place that calls the Config Server. Any failure
   (network error, non-2xx) throws `ConfigServerError` — never retried.

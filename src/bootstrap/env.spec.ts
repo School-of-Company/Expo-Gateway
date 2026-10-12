@@ -55,6 +55,15 @@ describe('readBootEnv', () => {
     process.env.NODE_ENV = 'test';
     expect(readBootEnv().profile).toBe('test');
   });
+
+  it('reads CONFIG_SERVER_PASSWORD and treats an empty value as unset', () => {
+    process.env.CONFIG_SERVER_URL = 'http://config-server:8888';
+    process.env.PROFILE = 'local';
+    process.env.CONFIG_SERVER_PASSWORD = 'pw';
+    expect(readBootEnv().configServerPassword).toBe('pw');
+    process.env.CONFIG_SERVER_PASSWORD = '';
+    expect(readBootEnv().configServerPassword).toBeUndefined();
+  });
 });
 
 describe('readInstanceEnv', () => {

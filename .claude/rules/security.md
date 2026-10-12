@@ -25,9 +25,14 @@
 
 ## Environment Variable Management
 
-Boot-time env vars (`CONFIG_SERVER_URL`, `PROFILE`, `INSTANCE_HOSTNAME`, `INSTANCE_IP_ADDR`,
-`PORT`) are read from `process.env` only inside `src/bootstrap/env.ts`. Guards, services, and
+Boot-time env vars (`CONFIG_SERVER_URL`, `CONFIG_SERVER_PASSWORD`, `PROFILE`, `INSTANCE_HOSTNAME`,
+`INSTANCE_IP_ADDR`, `PORT`) are read from `process.env` only inside `src/bootstrap/env.ts`. Guards, services, and
 controllers read config through `GatewayConfigService`, never `process.env` directly.
+
+`CONFIG_SERVER_PASSWORD` (optional) is sent to the Config Server as HTTP Basic auth with the
+username `gateway` (Expo-Config-Server#54). Never log it, put it in `CONFIG_SERVER_URL`
+(`user:pass@host` — Node `fetch` rejects credentials in URLs and the URL is echoed in errors), or
+commit it.
 
 ## Config Server Response Handling
 

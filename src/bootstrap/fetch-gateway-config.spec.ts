@@ -34,6 +34,7 @@ describe('fetchGatewayConfig', () => {
     expect(config.jwt.publicKey).toContain('BEGIN PUBLIC KEY');
     expect(global.fetch).toHaveBeenCalledWith(
       'http://config-server:8888/configs/gateway/local',
+      { headers: {} },
     );
   });
 
@@ -46,7 +47,38 @@ describe('fetchGatewayConfig', () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       'http://config-server:8888/configs/gateway/local',
+      { headers: {} },
     );
+  });
+
+  it('sends Basic auth as the gateway service when a password is given', async () => {
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(jsonResponse(200, validPayload));
+
+    await fetchGatewayConfig('http://config-server:8888', 'local', 'pw:1');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://config-server:8888/configs/gateway/local',
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from('gateway:pw:1').toString('base64')}`,
+        },
+      },
+    );
+  });
+
+  it('does not put the password in the error on a 401', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(jsonResponse(401, {}));
+
+    const rejection = fetchGatewayConfig(
+      'http://config-server:8888',
+      'local',
+      'secret-pw',
+    );
+
+    await expect(rejection).rejects.toThrow(/responded 401/);
+    await expect(rejection).rejects.not.toThrow(/secret-pw/);
   });
 
   it('rejects on a 404 (undefined profile)', async () => {
