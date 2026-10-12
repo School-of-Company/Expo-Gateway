@@ -1,6 +1,8 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { generateKeyPairSync } from 'node:crypto';
+import { runInNewContext } from 'node:vm';
+import { gzipSync } from 'node:zlib';
 import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
@@ -32,6 +34,14 @@ describe('통합 API 문서 /docs (e2e)', () => {
   beforeAll((done) => {
     stub = http.createServer((req, res) => {
       upstreamPaths.push(`${req.method} ${req.url}`);
+      if (req.headers['accept-encoding']?.includes('gzip')) {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Content-Encoding': 'gzip',
+        });
+        res.end(gzipSync(JSON.stringify({ openapi: '3.0.1' })));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ openapi: '3.0.1' }));
     });
@@ -135,6 +145,60 @@ describe('통합 API 문서 /docs (e2e)', () => {
       expect(init.headers['content-type']).toMatch(/javascript/);
     });
 
+    it('Try it out 요청은 문서의 servers가 백엔드 주소여도 게이트웨이로 간다', async () => {
+      const server = await start(enabledDocs);
+      const { text } = await request(server).get(
+        '/docs/swagger-initializer.js',
+      );
+      let options:
+        | { requestInterceptor: (r: { url: string }) => { url: string } }
+        | undefined;
+      const window = {
+        location: {
+          href: 'https://gw.example/docs',
+          origin: 'https://gw.example',
+        },
+        addEventListener: (_event: string, listener: () => void) => listener(),
+      };
+      const fetchConfig = () =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              title: 't',
+              services: [{ name: 'a', url: '/a' }],
+            }),
+        });
+      const SwaggerUIBundle = Object.assign(
+        (o: typeof options) => (options = o),
+        { presets: {} },
+      );
+      // 게이트웨이가 내려주는 고정 스크립트를 브라우저 대신 격리된 컨텍스트에서 실행한다.
+      runInNewContext(text, {
+        window,
+        document: { getElementById: () => ({}) },
+        fetch: fetchConfig,
+        SwaggerUIBundle,
+        SwaggerUIStandalonePreset: {},
+        URL,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const pin = (url: string) => options!.requestInterceptor({ url }).url;
+      expect(pin('http://10.0.0.5:8081/attendance/1?x=1')).toBe(
+        'https://gw.example/attendance/1?x=1',
+      );
+      expect(pin('https://gw.example/expo/1')).toBe(
+        'https://gw.example/expo/1',
+      );
+      expect(pin('http://10.0.0.5:8081/forms/a%20b')).toBe(
+        'https://gw.example/forms/a%20b',
+      );
+      expect(pin('/attendance/v3/api-docs')).toBe(
+        'https://gw.example/attendance/v3/api-docs',
+      );
+    });
+
     it('목록에 없는 파일과 경로 이탈은 열어주지 않는다', async () => {
       const server = await start(enabledDocs);
       for (const path of [
@@ -172,6 +236,18 @@ describe('통합 API 문서 /docs (e2e)', () => {
       const res = await request(server).get('/attendance/v3/api-docs');
       expect(res.status).toBe(200);
       expect(upstreamPaths).toEqual(['GET /attendance/v3/api-docs']);
+    });
+
+    it('서비스 OpenAPI 응답의 Content-Type과 gzip 본문을 바꾸지 않고 전달한다', async () => {
+      const server = await start(enabledDocs);
+      const res = await request(server)
+        .get('/attendance/v3/api-docs')
+        .set('Accept-Encoding', 'gzip');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/json');
+      expect(res.headers['content-encoding']).toBe('gzip');
+      // supertest가 gzip을 풀어 파싱했으므로 압축된 본문이 온전히 전달된 것이다.
+      expect(res.body).toEqual({ openapi: '3.0.1' });
     });
 
     it('등록되지 않은 경로는 이전처럼 401(토큰 없음)/404(토큰 있음)이고 /health는 그대로다', async () => {

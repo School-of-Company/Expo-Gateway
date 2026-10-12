@@ -52,6 +52,18 @@ const INITIALIZER_JS = `window.addEventListener('load', function () {
         deepLinking: true,
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
         layout: 'StandaloneLayout',
+        // A service's springdoc "servers" can be its own instance address
+        // (Host is rewritten when proxying). Every call goes to the gateway, so
+        // Try it out never bypasses JWT/routing nor sends a token elsewhere.
+        requestInterceptor: function (req) {
+          try {
+            var url = new URL(req.url, window.location.href);
+            req.url = window.location.origin + url.pathname + url.search;
+          } catch (e) {
+            // An unparsable URL cannot be fetched anyway; let Swagger UI report it.
+          }
+          return req;
+        },
       });
     })
     .catch(function (err) {
