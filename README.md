@@ -156,6 +156,8 @@ docs:
   when a service's OpenAPI `servers` holds its own instance address (springdoc
   builds it from the proxied `Host`). Calls therefore go through JWT, routing
   and the Origin check, and an `Authorize` token never leaves the gateway.
+  Spec and external `$ref` fetches are not rewritten; OAuth2 token URLs are not
+  supported (every service uses a bearer JWT).
   Browsers send `Origin` on same-origin writes too: while `cors` is set, add the
   gateway's own origin to `cors.allowedOrigins` or POST/PUT/PATCH/DELETE from
   `/docs` get 403 (GET still works).

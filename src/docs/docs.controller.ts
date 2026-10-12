@@ -53,9 +53,13 @@ const INITIALIZER_JS = `window.addEventListener('load', function () {
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
         layout: 'StandaloneLayout',
         // A service's springdoc "servers" can be its own instance address
-        // (Host is rewritten when proxying). Every call goes to the gateway, so
-        // Try it out never bypasses JWT/routing nor sends a token elsewhere.
+        // (Host is rewritten when proxying). Every API call goes to the
+        // gateway, so Try it out never bypasses JWT/routing nor sends a token
+        // elsewhere. Spec and external $ref fetches (loadSpec) are left alone.
+        // ponytail: an OAuth2 tokenUrl would be rewritten too; no service uses
+        // OAuth2 flows today — exempt it here if one ever does.
         requestInterceptor: function (req) {
+          if (req.loadSpec) return req;
           try {
             var url = new URL(req.url, window.location.href);
             req.url = window.location.origin + url.pathname + url.search;

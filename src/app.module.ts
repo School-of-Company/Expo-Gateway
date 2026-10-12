@@ -43,7 +43,6 @@ import { HealthController } from './health/health.controller';
                   // The /docs page loading /sms/v3/api-docs sends no SMS.
                   const isDocsFetch =
                     method === 'GET' &&
-                    path.endsWith('/v3/api-docs') &&
                     config.docs?.enabled === true &&
                     (config.docs.services ?? []).some((s) => s.url === path);
                   return (

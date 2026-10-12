@@ -151,7 +151,11 @@ describe('통합 API 문서 /docs (e2e)', () => {
         '/docs/swagger-initializer.js',
       );
       let options:
-        | { requestInterceptor: (r: { url: string }) => { url: string } }
+        | {
+            requestInterceptor: (r: { url: string; loadSpec?: boolean }) => {
+              url: string;
+            };
+          }
         | undefined;
       const window = {
         location: {
@@ -184,7 +188,12 @@ describe('통합 API 문서 /docs (e2e)', () => {
       });
       await new Promise((resolve) => setImmediate(resolve));
 
-      const pin = (url: string) => options!.requestInterceptor({ url }).url;
+      const pin = (url: string, loadSpec?: boolean) =>
+        options!.requestInterceptor({ url, loadSpec }).url;
+      // 문서와 외부 $ref를 불러오는 요청(loadSpec)은 바꾸지 않는다.
+      expect(pin('https://schemas.example/common.json', true)).toBe(
+        'https://schemas.example/common.json',
+      );
       expect(pin('http://10.0.0.5:8081/attendance/1?x=1')).toBe(
         'https://gw.example/attendance/1?x=1',
       );
