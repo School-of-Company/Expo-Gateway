@@ -89,13 +89,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
     await app.close();
   });
 
-  async function listen(): Promise<number> {
-    const server = getHttpServer(app);
-    await new Promise<void>((resolve) =>
-      server.listen(0, '127.0.0.1', resolve),
-    );
-    return (server.address() as AddressInfo).port;
-  }
+  const appPort = () => (getHttpServer(app).address() as AddressInfo).port;
 
   const sleep = (ms: number) =>
     new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -123,7 +117,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   }, 3000);
 
   it('closes the upstream request when the client cancels after sending the full body', async () => {
-    const port = await listen();
+    const port = appPort();
 
     const upstreamClosed = new Promise<number>((resolve, reject) => {
       onBodyEnd = (upstreamReq) => {
@@ -150,7 +144,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   }, 3000);
 
   it('closes the client connection when the upstream stalls mid-body after the headers', async () => {
-    const port = await listen();
+    const port = appPort();
 
     const clientClosed = new Promise<string>((resolve, reject) => {
       http
@@ -169,7 +163,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   }, 3000);
 
   it('does not proxy a request whose client left during the instance lookup', async () => {
-    const port = await listen();
+    const port = appPort();
     let releaseLookup = () => undefined as void;
     lookupGate = new Promise((resolve) => (releaseLookup = resolve));
 
@@ -191,7 +185,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   }, 3000);
 
   it('does not report a client that stalls its upload as an upstream timeout', async () => {
-    const port = await listen();
+    const port = appPort();
     let response: http.IncomingMessage | undefined;
     const clientReq = http.request({
       port,
