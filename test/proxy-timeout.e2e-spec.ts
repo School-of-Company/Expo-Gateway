@@ -1,5 +1,5 @@
 import * as http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import * as request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
@@ -17,6 +17,8 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   let stub: http.Server;
   let received: http.IncomingMessage[];
   let onBodyEnd: ((req: http.IncomingMessage) => void) | undefined;
+  let lookupGate: Promise<void>;
+  let upstreamSockets: Socket[];
 
   beforeAll((done) => {
     stub = http.createServer((req, res) => {
@@ -26,6 +28,11 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
       req.on('end', () => {
         onBodyEnd?.(req);
         if (req.url?.startsWith('/forms/hang')) return; // never responds
+        if (req.url === '/forms/stall-body') {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.write('partial'); // never ends
+          return;
+        }
         if (req.url === '/forms/gzip') {
           res.writeHead(200, {
             'Content-Type': 'application/json',
@@ -43,6 +50,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
         );
       });
     });
+    stub.on('connection', (socket: Socket) => upstreamSockets.push(socket));
     stub.listen(0, '127.0.0.1', done);
   });
 
@@ -54,6 +62,8 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   beforeEach(async () => {
     received = [];
     onBodyEnd = undefined;
+    lookupGate = Promise.resolve();
+    upstreamSockets = [];
     const gatewayConfig: GatewayConfig = {
       jwt: { publicKey: 'unused-in-this-test' },
       eureka: { serviceUrl: 'http://unused:8761/eureka' },
@@ -62,12 +72,15 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
     };
     app = await createTestApp({
       gatewayConfig,
-      eurekaInstances: [
-        instance({
-          ipAddr: '127.0.0.1',
-          port: (stub.address() as AddressInfo).port,
-        }),
-      ],
+      eurekaInstances: async () => {
+        await lookupGate;
+        return [
+          instance({
+            ipAddr: '127.0.0.1',
+            port: (stub.address() as AddressInfo).port,
+          }),
+        ];
+      },
       upstreamTimeoutMs: TIMEOUT_MS,
     });
   });
@@ -75,6 +88,17 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   afterEach(async () => {
     await app.close();
   });
+
+  async function listen(): Promise<number> {
+    const server = getHttpServer(app);
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    return (server.address() as AddressInfo).port;
+  }
+
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
 
   it('answers 504 when the upstream never responds, closes the upstream request and does not retry', async () => {
     const res = await request(getHttpServer(app))
@@ -99,11 +123,7 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
   }, 3000);
 
   it('closes the upstream request when the client cancels after sending the full body', async () => {
-    const server = getHttpServer(app);
-    await new Promise<void>((resolve) =>
-      server.listen(0, '127.0.0.1', resolve),
-    );
-    const { port } = server.address() as AddressInfo;
+    const port = await listen();
 
     const upstreamClosed = new Promise<number>((resolve, reject) => {
       onBodyEnd = (upstreamReq) => {
@@ -127,6 +147,68 @@ describe('Proxy upstream timeout and client cancel (e2e)', () => {
     // Well under TIMEOUT_MS: the cancel itself closes it, not the timeout.
     expect(await upstreamClosed).toBeLessThan(TIMEOUT_MS / 2);
     expect(received).toHaveLength(1);
+  }, 3000);
+
+  it('closes the client connection when the upstream stalls mid-body after the headers', async () => {
+    const port = await listen();
+
+    const clientClosed = new Promise<string>((resolve, reject) => {
+      http
+        .get({ port, path: '/forms/stall-body' }, (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => (body += chunk));
+          res.on('close', () => resolve(body));
+        })
+        .on('error', reject);
+    });
+
+    expect(await clientClosed).toBe('partial');
+    await sleep(50);
+    expect(received[0].socket.destroyed).toBe(true);
+  }, 3000);
+
+  it('does not proxy a request whose client left during the instance lookup', async () => {
+    const port = await listen();
+    let releaseLookup = () => undefined as void;
+    lookupGate = new Promise((resolve) => (releaseLookup = resolve));
+
+    const clientReq = http.request({
+      port,
+      method: 'POST',
+      path: '/forms/hang',
+    });
+    clientReq.on('error', () => undefined);
+    clientReq.end('{}');
+    await sleep(50);
+    clientReq.destroy();
+    await sleep(50);
+    releaseLookup();
+    await sleep(TIMEOUT_MS / 2);
+
+    expect(received).toHaveLength(0);
+    expect(upstreamSockets.filter((s) => !s.destroyed)).toHaveLength(0);
+  }, 3000);
+
+  it('does not report a client that stalls its upload as an upstream timeout', async () => {
+    const port = await listen();
+    let response: http.IncomingMessage | undefined;
+    const clientReq = http.request({
+      port,
+      method: 'POST',
+      path: '/forms/upload',
+      headers: { 'Content-Length': '10' },
+    });
+    clientReq.on('response', (res) => (response = res));
+    clientReq.on('error', () => undefined);
+    clientReq.write('ab'); // 8 bytes never arrive
+
+    await sleep(TIMEOUT_MS * 2);
+    expect(response?.statusCode).toBeUndefined();
+
+    clientReq.destroy();
+    await sleep(TIMEOUT_MS / 2);
+    expect(received[0].socket.destroyed).toBe(true);
   }, 3000);
 
   it('still passes multipart bodies through unchanged', async () => {

@@ -114,8 +114,8 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 | Zero `UP` instances for the resolved Eureka app | 503 (`NoHealthyInstanceError`) |
 | `EurekaService.getInstances()` itself throws | 502 (`EurekaLookupError`) |
 | Instance reachable per Eureka but connection fails at actual proxy time | 502 (`on.error` hook) |
-| Upstream socket idle for 60s (`proxy/upstream-timeout.ts`) | 504 `{ message: 'Gateway Timeout' }`, upstream request destroyed, never retried |
-| Client disconnects before the response finishes | upstream request destroyed (recorded as 499) |
+| Upstream socket idle for 60s after the client body is in (`proxy/upstream-timeout.ts`) | 504 `{ message: 'Gateway Timeout' }`, upstream request destroyed, never retried; if the response already started, both connections are closed instead (recorded as 499) |
+| Client disconnects before the response finishes (including during the Eureka lookup) | upstream request destroyed or never sent (recorded as 499) |
 | Missing/invalid/expired/wrong-algorithm JWT on a non-public path | 401 |
 | Rate limit exceeded | 429 (`@nestjs/throttler`'s own response) |
 | Path with an `internal` or `.`/`..` segment (after percent-decoding) | 404, never forwarded (`proxy/blocked-paths.ts`) |

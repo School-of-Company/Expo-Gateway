@@ -26,12 +26,14 @@ groups:
 
       # Catches a dead instance that Eureka still lists as UP (SIGKILL / OOM /
       # host down): the instance count never drops until its lease expires, but
-      # every request routed to it fails with 502. The traffic floor stops a
-      # handful of failures on a quiet app from flapping the alert.
+      # every request routed to it fails with 502 (refused/reset) or 504 (host
+      # gone silent, after the 60s upstream idle limit). The traffic floor stops
+      # a handful of failures on a quiet app from flapping the alert. The name
+      # predates the 504 and is kept so existing silences/results still match.
       - alert: GatewayUpstream502Rate
         expr: |
           (
-            sum by (app) (rate(gateway_http_requests_total{status="502"}[1m]))
+            sum by (app) (rate(gateway_http_requests_total{status=~"502|504"}[1m]))
             /
             sum by (app) (rate(gateway_http_requests_total[1m]))
           ) > 0.2
@@ -41,10 +43,10 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.app }}: more than 20% of requests fail with 502"
+          summary: "{{ $labels.app }}: more than 20% of requests fail with 502/504"
           description: >-
             Requests routed to {{ $labels.app }} are failing at the connection
-            level. If gateway_upstream_healthy_instances is still above 0, Eureka
+            level or timing out. If gateway_upstream_healthy_instances is still above 0, Eureka
             has not noticed yet (lease not expired).
 
       - alert: GatewayNoHealthyInstances
