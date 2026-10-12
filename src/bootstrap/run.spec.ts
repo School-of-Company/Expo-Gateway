@@ -52,6 +52,7 @@ describe('runBootstrap', () => {
     delete process.env.METRICS_HOST;
     delete process.env.METRICS_PORT;
     delete process.env.METRICS_ENABLED;
+    delete process.env.CONFIG_SERVER_PASSWORD;
     mockedFetch.mockReset();
     mockedCreate.mockReset();
     mockedStartMetrics.mockReset();
@@ -72,6 +73,19 @@ describe('runBootstrap', () => {
 
     expect(exit).toHaveBeenCalledWith(1);
     expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it('passes CONFIG_SERVER_PASSWORD to the config fetch', async () => {
+    process.env.CONFIG_SERVER_PASSWORD = 'pw';
+    mockedFetch.mockRejectedValue(new Error('stop after fetch'));
+
+    await runBootstrap(jest.fn());
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      'http://config-server:8888',
+      'local',
+      'pw',
+    );
   });
 
   it('fails fast on a malformed METRICS_PORT before touching the network', async () => {
