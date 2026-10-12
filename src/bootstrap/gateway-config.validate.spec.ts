@@ -75,6 +75,25 @@ describe('parseGatewayConfig', () => {
     ).toThrow(InvalidGatewayConfigError);
   });
 
+  it.each([
+    { ttlSeconds: 0, limit: 100 },
+    { ttlSeconds: 60, limit: 0 },
+    { ttlSeconds: -1, limit: 0 },
+    { ttlSeconds: 1.5, limit: -2 },
+    { ttlSeconds: 60, limit: 1.5 },
+    { ttlSeconds: Infinity, limit: 100 },
+    { ttlSeconds: 60, limit: NaN },
+    { ttlSeconds: Number.MAX_SAFE_INTEGER + 1, limit: 100 },
+  ])('rejects a non-positive-safe-integer global rateLimit %p', (rateLimit) => {
+    expect(() => parseGatewayConfig({ ...valid, rateLimit })).toThrow(
+      'rateLimit.ttlSeconds and rateLimit.limit must be positive safe integers',
+    );
+  });
+
+  it('keeps rateLimit undefined when omitted so the defaults apply', () => {
+    expect(parseGatewayConfig(valid).rateLimit).toBeUndefined();
+  });
+
   it('rejects a non-array publicPaths', () => {
     expect(() =>
       parseGatewayConfig({ ...valid, publicPaths: '/auth' }),
