@@ -14,6 +14,11 @@ export interface RateLimitConfig {
     readonly ttlSeconds: number;
     readonly limit: number;
   };
+  /** IP budget for `POST /participant-auth/code` (each call sends an SMS). */
+  readonly participantAuthCode?: {
+    readonly ttlSeconds: number;
+    readonly limit: number;
+  };
 }
 
 export interface EurekaSharedConfig {
@@ -37,6 +42,16 @@ export interface GatewayConfig {
    */
   publicPaths?: string[];
   docs?: DocsConfig;
+  cors?: CorsConfig;
+}
+
+/**
+ * Credentialed CORS for browser clients (participant session cookie). Exact
+ * origins only (`https://expo.example.com`), never `*`. Absent = the gateway
+ * sends no CORS headers and does no `Origin` check, as before.
+ */
+export interface CorsConfig {
+  readonly allowedOrigins: readonly string[];
 }
 
 export interface DocsServiceConfig {

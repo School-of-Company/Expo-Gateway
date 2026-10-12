@@ -11,6 +11,7 @@ src/
 ├── proxy/         — The catch-all controller, route resolution, load balancing/instance selection,
 │                    request-metrics middleware, background Eureka poller.
 ├── metrics/       — MetricsService (prom-client registry) + the separate-port /metrics server.
+├── cors/          — Credentialed CORS + Origin check on writes (middleware, before guards).
 └── health/        — GET /health only. Nothing else belongs here.
 ```
 
@@ -44,7 +45,7 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 ## File Responsibilities
 
 - `bootstrap/env.ts`: reads `process.env` for boot-time values only (`CONFIG_SERVER_URL`,
-  `PROFILE`/`NODE_ENV`, `INSTANCE_HOSTNAME`, `INSTANCE_IP_ADDR`, `PORT`). Throws synchronously on
+  `CONFIG_SERVER_PASSWORD`, `PROFILE`/`NODE_ENV`, `INSTANCE_HOSTNAME`, `INSTANCE_IP_ADDR`, `PORT`). Throws synchronously on
   anything required and missing — no lazy failure on first request.
 - `bootstrap/fetch-gateway-config.ts`: the one place that calls the Config Server. Any failure
   (network error, non-2xx) throws `ConfigServerError` — never retried.
@@ -113,8 +114,12 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
 | Zero `UP` instances for the resolved Eureka app | 503 (`NoHealthyInstanceError`) |
 | `EurekaService.getInstances()` itself throws | 502 (`EurekaLookupError`) |
 | Instance reachable per Eureka but connection fails at actual proxy time | 502 (`on.error` hook) |
+| Upstream socket idle for 60s after the client body is in (`proxy/upstream-timeout.ts`) | 504 `{ message: 'Gateway Timeout' }`, upstream request destroyed, never retried; if the response already started, both connections are closed instead (recorded as 499) |
+| Client disconnects before the response finishes (including during the Eureka lookup) | upstream request destroyed or never sent (recorded as 499) |
 | Missing/invalid/expired/wrong-algorithm JWT on a non-public path | 401 |
 | Rate limit exceeded | 429 (`@nestjs/throttler`'s own response) |
+| Path with an `internal` or `.`/`..` segment (after percent-decoding) | 404, never forwarded (`proxy/blocked-paths.ts`) |
+| `cors` set and a POST/PUT/PATCH/DELETE or preflight carries a non-allowed `Origin` | 403 (`cors/cors.middleware.ts`) |
 | Config Server fetch fails at boot (network error, or its own 404/503) | process exits — nothing served |
 
 No retry, backoff, or circuit-breaker anywhere in this table. This mirrors the Config Server's own

@@ -22,7 +22,11 @@ export async function runBootstrap(
 
   let config: GatewayConfig;
   try {
-    config = await fetchGatewayConfig(env.configServerUrl, env.profile);
+    config = await fetchGatewayConfig(
+      env.configServerUrl,
+      env.profile,
+      env.configServerPassword,
+    );
   } catch (err) {
     logger.error(
       `Config Server fetch failed for gateway/${env.profile}: ${(err as Error).message}`,

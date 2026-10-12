@@ -12,12 +12,20 @@ export class ConfigServerError extends Error {}
 export async function fetchGatewayConfig(
   configServerUrl: string,
   profile: string,
+  password?: string,
 ): Promise<GatewayConfig> {
   const url = `${configServerUrl.replace(/\/+$/, '')}/configs/gateway/${encodeURIComponent(profile)}`;
+  // Config Server 인증(Expo-Config-Server#54). 비밀번호가 없으면 헤더 없이 호출한다 —
+  // 인증을 켜기 전의 Config Server 와도 그대로 동작하게 하려는 것이다.
+  const headers: Record<string, string> = password
+    ? {
+        Authorization: `Basic ${Buffer.from(`gateway:${password}`).toString('base64')}`,
+      }
+    : {};
 
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, { headers });
   } catch (err) {
     throw new ConfigServerError(
       `Could not reach Config Server at ${url}: ${(err as Error).message}`,

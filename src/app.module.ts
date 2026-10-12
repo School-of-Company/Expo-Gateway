@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -10,6 +10,7 @@ import {
 } from './config/gateway-config.module';
 import type { GatewayConfig } from './bootstrap/gateway-config.types';
 import { DEFAULT_RATE_LIMIT } from './config/gateway-config.defaults';
+import { CorsMiddleware } from './cors/cors.middleware';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { MetricsModule } from './metrics/metrics.module';
 import { ProxyModule } from './proxy/proxy.module';
@@ -36,8 +37,18 @@ import { HealthController } from './health/health.controller';
                 ttl: config.rateLimit.sms.ttlSeconds * 1000,
                 limit: config.rateLimit.sms.limit,
                 skipIf: (context: ExecutionContext) => {
-                  const { path } = context.switchToHttp().getRequest<Request>();
-                  return path !== '/sms' && !path.startsWith('/sms/');
+                  const { method, path } = context
+                    .switchToHttp()
+                    .getRequest<Request>();
+                  // The /docs page loading /sms/v3/api-docs sends no SMS.
+                  const isDocsFetch =
+                    method === 'GET' &&
+                    config.docs?.enabled === true &&
+                    (config.docs.services ?? []).some((s) => s.url === path);
+                  return (
+                    (path !== '/sms' && !path.startsWith('/sms/')) ||
+                    isDocsFetch
+                  );
                 },
               },
             ]
@@ -63,6 +74,33 @@ import { HealthController } from './health/health.controller';
               },
             ]
           : []),
+        ...(config.rateLimit?.participantAuthCode
+          ? [
+              {
+                name: 'participantAuthCode',
+                ttl: config.rateLimit.participantAuthCode.ttlSeconds * 1000,
+                limit: config.rateLimit.participantAuthCode.limit,
+                // Each call sends an SMS. The per-phone-number limit lives in
+                // User Server (the gateway never reads bodies); this is per IP.
+                skipIf: (context: ExecutionContext) => {
+                  const { method, path } = context
+                    .switchToHttp()
+                    .getRequest<Request>();
+                  // Compare what the backend will route (`%63ode`, `code;x`).
+                  let target = path;
+                  try {
+                    target = decodeURIComponent(path);
+                  } catch {
+                    // Undecodable: the proxy answers 404 without forwarding.
+                  }
+                  target = target.split(';')[0].replace(/\/+$/, '');
+                  return (
+                    method !== 'POST' || target !== '/participant-auth/code'
+                  );
+                },
+              },
+            ]
+          : []),
       ],
     }),
     ProxyModule,
@@ -73,6 +111,13 @@ import { HealthController } from './health/health.controller';
     // spending CPU on RS256 verification in JwtAuthGuard.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    CorsMiddleware,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // Middleware runs before guards, so preflights and foreign-origin writes
+    // are settled before the throttler or JWT verification see them.
+    consumer.apply(CorsMiddleware).forRoutes('{*splat}');
+  }
+}

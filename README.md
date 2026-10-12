@@ -62,6 +62,66 @@ Public SMS methods and profile settings belong to
 Adding this Gateway capability alone does not enable the SMS policy or make
 SMS endpoints public.
 
+### Participant browser flows (cookies, CORS, CSRF)
+
+Participant phone auth (User Server `/participant-auth/**`, Gateway #25) and the
+Application participant APIs (Gateway #29) authenticate with the HttpOnly
+`PARTICIPANT_SESSION` cookie, not a JWT. Gateway support:
+
+- **Dynamic public paths.** A method-qualified `publicPaths` entry may use
+  whole-segment placeholders, e.g.
+  `POST /application/expos/{expoId}/my-applications/{type:PREREGISTER|STANDARD|TRAINING}/{applicationId}/cancellation`.
+  `{name}` matches one id (a decimal number or a UUID); `{name:A|B}` matches
+  exactly one listed value. An arbitrary word never matches, so
+  `POST /application/{expoId}` does not open `POST /application/admin`. The
+  method, the segment count and every literal segment must match; `.`/`..`,
+  `%`-encoded and `;` values never match. Plain (`/prefix`) entries cannot use braces.
+- **Pass-through.** `Cookie` (`PARTICIPANT_SESSION`, `JSESSIONID`,
+  `XSRF-TOKEN`), every `Set-Cookie` with its attributes, `X-CSRF-TOKEN`,
+  `X-XSRF-TOKEN`, `Idempotency-Key` and upstream status codes/bodies
+  (401/403/409/429/503 ...) are forwarded unchanged. The gateway never rewrites
+  cookie `Domain`/`Path`; User Server owns them via `PARTICIPANT_SESSION_COOKIE_*`.
+- **Internal APIs are never exposed.** Any path with an `internal` segment, or a
+  `.`/`..` segment, after percent-decoding (`/internal/**`, `/x/..%2finternal`,
+  `/%69nternal`) returns 404 without being forwarded, even if a routing prefix
+  would match and even with a valid JWT (without a JWT a protected path still
+  answers 401 first). A path whose percent-encoding cannot be decoded (`/a/100%`)
+  is answered 404 the same way. A client-sent `X-Internal-Token` is removed
+  before proxying.
+- **Credentialed CORS** (optional, off when absent):
+
+  ```yaml
+  cors:
+    allowedOrigins:
+      - https://expo.example.com   # exact scheme://host[:port], no "*", no path
+  ```
+
+  An allowed `Origin` is echoed with `Access-Control-Allow-Credentials: true`
+  and `Vary: Origin`; preflights are answered by the gateway (204, methods
+  `GET POST PUT PATCH DELETE`, headers `Authorization Content-Type X-CSRF-TOKEN
+  X-XSRF-TOKEN Idempotency-Key`, max-age 600) and never reach a backend;
+  `X-CSRF-TOKEN` is exposed to the page. Upstream `Access-Control-*` headers are
+  dropped so the gateway is the single CORS owner. Invalid origins fail boot.
+- **CSRF (gateway half).** With `cors` set, a POST/PUT/PATCH/DELETE whose
+  `Origin` is present but not allowed gets 403 before it is forwarded or
+  rate-limited. Requests without `Origin` (a server-side BFF, curl) pass.
+  Same-origin pages served by the gateway itself (the `/docs` "Try it out")
+  also send `Origin`, so list the gateway's own origin too if that is used.
+  Backends keep their own checks: Application requires `X-CSRF-TOKEN` +
+  `JSESSIONID` (my-applications cancel) or `X-XSRF-TOKEN` + `XSRF-TOKEN`
+  (program sessions). The `PARTICIPANT_SESSION` cookie should stay
+  `SameSite=Lax` while the front and API are same-site; cross-site needs
+  `SameSite=None; Secure` plus this Origin check.
+- **SMS abuse.** `rateLimit.participantAuthCode` (same shape as `survey`)
+  budgets `POST /participant-auth/code` per client IP (encoded / `;` variants
+  included) and returns 429 with `Retry-After-participantAuthCode` (exposed to
+  allowed origins). The per-phone-number limit belongs to
+  User Server / Notification Server (the gateway never reads bodies).
+
+The public path list, the `/participant-auth` routing prefix, `cors` and
+`participantAuthCode` values live in Config Server `gateway-{profile}.yml`; this
+gateway change alone opens nothing.
+
 ### Integrated API docs (`/docs`)
 
 An optional `docs` section turns on one Swagger UI page that lists every
@@ -90,6 +150,19 @@ docs:
   A `docs` section with `enabled: false` leaves `/docs` as an ordinary unknown
   path (401 without a token, 404 with one, as before).
 - Docs requests share the default per-IP rate limit; there is no separate budget.
+  A `GET` of a URL listed in `docs.services` (e.g. `/sms/v3/api-docs`) does not
+  spend the `rateLimit.sms` budget, which is meant for sending SMS.
+- "Try it out" always calls the gateway origin the page was loaded from, even
+  when a service's OpenAPI `servers` holds its own instance address (springdoc
+  builds it from the proxied `Host`). Calls therefore go through JWT, routing
+  and the Origin check, and an `Authorize` token never leaves the gateway.
+  Spec and external `$ref` fetches are not rewritten; OAuth2 token URLs are not
+  supported (every service uses a bearer JWT).
+  Browsers send `Origin` on same-origin writes too: while `cors` is set, add the
+  gateway's own origin to `cors.allowedOrigins` or POST/PUT/PATCH/DELETE from
+  `/docs` get 403 (GET still works).
+  The Authorize button only appears for documents that declare a security
+  scheme (e.g. `bearerAuth`).
 
 Path convention: each service serves its OpenAPI JSON under its own gateway
 prefix as `/{prefix}/v3/api-docs` (for example `/attendance/v3/api-docs`).
@@ -156,15 +229,19 @@ $ npm run test:cov
 
 ## Deployment
 
-GitHub Actions validates pull requests without packaging, SSH credentials or
-remote deployment. Pushes to `develop` deploy to dev; pushes to `main` deploy
-to prod. Documentation and local monitoring changes do not trigger push deploys.
+GitHub Actions (`.github/workflows/deploy.yml`) runs tests and the build for
+pull requests into `develop` or `main` without packaging, SSH credentials or
+remote deployment. **Only a push to `main` deploys** (or a manual
+`workflow_dispatch` on `main`); merging into `develop` deploys nothing. The
+server is a single environment, so there is no separate dev deployment.
+Documentation, `.claude/`, local monitoring and `docker-compose.yml` changes do
+not trigger a push deploy.
 
-Configure repository variables `EXPO_SSH_HOST`, `EXPO_SSH_PORT`,
-`EXPO_SSH_USER`, `EXPO_REMOTE_ROOT_DEV` and `EXPO_REMOTE_ROOT_PROD`, plus
-secrets `EXPO_SSH_KEY` and `EXPO_SSH_KNOWN_HOSTS`. Root paths must be absolute
-and contain no whitespace or shell metacharacters. Missing deployment variables
-stop the job before installation; prod never falls back to the dev root.
+Configure repository variables `EXPO_SSH_HOST`, `EXPO_SSH_PORT` and
+`EXPO_SSH_USER`, plus secrets `EXPO_SSH_KEY` and `EXPO_SSH_KNOWN_HOSTS`. The
+remote root is fixed in the workflow; it must be absolute and contain no
+whitespace or shell metacharacters. Missing deployment settings stop the job
+before installation.
 The SSH target's Node must match the runner's platform, architecture, Node ABI
 and libc version before the bundled `node_modules` is uploaded. A mismatch
 stops deployment before release upload. Run the workflow regression check with

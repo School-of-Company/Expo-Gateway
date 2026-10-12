@@ -1,6 +1,8 @@
 export interface BootEnv {
   configServerUrl: string;
   profile: string;
+  /** Config Server Basic 인증 비밀번호. 사용자 이름은 서비스 식별자 `gateway` 다. */
+  configServerPassword?: string;
 }
 
 function requireEnv(name: string): string {
@@ -17,7 +19,8 @@ export function readBootEnv(): BootEnv {
   if (!profile) {
     throw new Error('Missing required env var: PROFILE (or NODE_ENV)');
   }
-  return { configServerUrl, profile };
+  const configServerPassword = process.env.CONFIG_SERVER_PASSWORD || undefined;
+  return { configServerUrl, profile, configServerPassword };
 }
 
 export function readInstanceEnv() {

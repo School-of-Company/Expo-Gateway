@@ -25,9 +25,11 @@ describe('Auth (e2e)', () => {
   let app: INestApplication;
   let stub: http.Server;
   let stubPort: number;
+  let upstreamHits = 0;
 
   beforeAll((done) => {
     stub = http.createServer((req, res) => {
+      upstreamHits += 1;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
@@ -66,6 +68,44 @@ describe('Auth (e2e)', () => {
   afterEach(async () => {
     await app.close();
   });
+
+  it.each([
+    ['CR/LF', 'user\r\nX-User-Role: ADMIN'],
+    ['NUL', 'user\u0000'],
+    ['non-ASCII', '사용자'],
+  ])(
+    'rejects a validly signed token whose sub is unsafe as a header (%s) with 401 and no upstream call',
+    async (_name, sub) => {
+      const token = jwt.sign({ sub }, privateKeyPem, {
+        algorithm: 'RS256',
+        expiresIn: '5m',
+      });
+      const before = upstreamHits;
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(401);
+      expect(upstreamHits).toBe(before);
+    },
+  );
+
+  it.each([
+    ['string', 'user-1', 'user-1'],
+    ['numeric', 7, '7'],
+  ])(
+    'forwards a validly signed %s sub as x-user-id',
+    async (_name, sub, expected) => {
+      const token = jwt.sign({ sub }, privateKeyPem, {
+        algorithm: 'RS256',
+        expiresIn: '5m',
+      });
+      const res = await request(getHttpServer(app))
+        .get('/forms')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect((res.body as { xUserId: string }).xUserId).toBe(expected);
+    },
+  );
 
   it('rejects a protected path with no token', async () => {
     const res = await request(getHttpServer(app)).get('/forms');

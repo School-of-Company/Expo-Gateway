@@ -25,9 +25,14 @@
 
 ## Environment Variable Management
 
-Boot-time env vars (`CONFIG_SERVER_URL`, `PROFILE`, `INSTANCE_HOSTNAME`, `INSTANCE_IP_ADDR`,
-`PORT`) are read from `process.env` only inside `src/bootstrap/env.ts`. Guards, services, and
+Boot-time env vars (`CONFIG_SERVER_URL`, `CONFIG_SERVER_PASSWORD`, `PROFILE`, `INSTANCE_HOSTNAME`,
+`INSTANCE_IP_ADDR`, `PORT`) are read from `process.env` only inside `src/bootstrap/env.ts`. Guards, services, and
 controllers read config through `GatewayConfigService`, never `process.env` directly.
+
+`CONFIG_SERVER_PASSWORD` (optional) is sent to the Config Server as HTTP Basic auth with the
+username `gateway` (Expo-Config-Server#54). Never log it, put it in `CONFIG_SERVER_URL`
+(`user:pass@host` — Node `fetch` rejects credentials in URLs and the URL is echoed in errors), or
+commit it.
 
 ## Config Server Response Handling
 
@@ -82,7 +87,25 @@ controllers read config through `GatewayConfigService`, never `process.env` dire
   endpoint added under the same prefix later does not become public by accident.
 - A path can mix public and protected methods (e.g. `POST /auth` public, `DELETE /auth` protected).
   The protected method goes through normal verification and receives `X-User-Id`.
-- A malformed entry (unknown or lowercase method, stray whitespace) fails config validation at boot.
+- A method-qualified entry may use whole-segment placeholders: `{name}` (decimal or UUID id) and
+  `{name:A|B}` (one listed value).
+- A malformed entry (unknown or lowercase method, stray whitespace, braces outside a whole
+  `{name}` segment or on a plain entry) fails config validation at boot.
+
+## Internal APIs, CORS and CSRF
+
+- `/internal/**` endpoints are service-to-service (guarded by `X-Internal-Token`). The gateway
+  answers 404 for any path with an `internal`, `.` or `..` segment after percent-decoding and
+  strips a client-sent `X-Internal-Token` — regardless of the routing table. Do not weaken
+  `proxy/blocked-paths.ts` to route one.
+- `cors.allowedOrigins` holds exact origins only; never `*`, never reflect an arbitrary `Origin`
+  with `Allow-Credentials`. While `cors` is set the gateway is the single CORS owner and drops
+  upstream `Access-Control-*` headers.
+- A state-changing request with a non-allowed `Origin` is rejected (403) before forwarding. Adding
+  a header to `CORS_ALLOWED_HEADERS` is an API decision, not an incidental change.
+- Public-path placeholders: `{name}` matches only a decimal number or UUID, `{name:A|B}` only a
+  listed value. Never widen them to arbitrary words — that would open same-depth siblings
+  (`POST /application/admin` via `POST /application/{expoId}`).
 
 ## Proxying
 

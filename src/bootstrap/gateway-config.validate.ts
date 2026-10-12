@@ -1,4 +1,5 @@
 import { isValidPublicPathEntry } from '../auth/public-path.matcher';
+import { isExactOrigin } from '../cors/cors.policy';
 import type { GatewayConfig } from './gateway-config.types';
 
 export class InvalidGatewayConfigError extends Error {
@@ -19,7 +20,9 @@ function isRecordOfStrings(value: unknown): value is Record<string, string> {
   return Object.values(value).every((v) => typeof v === 'string');
 }
 
-function isPositiveIntegerPolicy(value: unknown): boolean {
+function isPositiveIntegerPolicy(
+  value: unknown,
+): value is { ttlSeconds: number; limit: number } {
   if (typeof value !== 'object' || value === null) return false;
   const { ttlSeconds, limit } = value as Record<string, unknown>;
   return (
@@ -149,21 +152,18 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
 
   if (candidate.rateLimit !== undefined) {
     const rateLimit = candidate.rateLimit;
-    if (
-      typeof rateLimit !== 'object' ||
-      rateLimit === null ||
-      !('ttlSeconds' in rateLimit) ||
-      !('limit' in rateLimit) ||
-      typeof rateLimit.ttlSeconds !== 'number' ||
-      typeof rateLimit.limit !== 'number'
-    ) {
+    if (!isPositiveIntegerPolicy(rateLimit)) {
       throw new InvalidGatewayConfigError(
-        'rateLimit.ttlSeconds and rateLimit.limit must be numbers when rateLimit is present',
+        'rateLimit.ttlSeconds and rateLimit.limit must be positive safe integers when rateLimit is present',
       );
     }
     const policies: Record<string, unknown> = {
       sms: 'sms' in rateLimit ? rateLimit.sms : undefined,
       survey: 'survey' in rateLimit ? rateLimit.survey : undefined,
+      participantAuthCode:
+        'participantAuthCode' in rateLimit
+          ? rateLimit.participantAuthCode
+          : undefined,
     };
     for (const [name, policy] of Object.entries(policies)) {
       if (policy !== undefined && !isPositiveIntegerPolicy(policy)) {
@@ -189,6 +189,20 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
 
   if (candidate.docs !== undefined) {
     validateDocs(candidate.docs);
+  }
+
+  if (candidate.cors !== undefined) {
+    const cors = candidate.cors as Record<string, unknown> | null;
+    const origins = cors?.allowedOrigins;
+    if (
+      !Array.isArray(origins) ||
+      origins.length === 0 ||
+      !origins.every(isExactOrigin)
+    ) {
+      throw new InvalidGatewayConfigError(
+        'cors.allowedOrigins must be a non-empty array of exact http(s) origins (no "*", path or trailing slash)',
+      );
+    }
   }
 
   if (candidate.port !== undefined && typeof candidate.port !== 'number') {

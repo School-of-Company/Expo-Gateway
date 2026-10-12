@@ -1,18 +1,22 @@
-import { All, Controller, Next, Req, Res } from '@nestjs/common';
+import { All, Controller, Inject, Next, Req, Res } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { GatewayConfigService } from '../config/gateway-config.service';
+import { stripUpstreamCorsHeaders } from '../cors/cors.policy';
 import { isDocsPath } from '../docs/docs.paths';
 import { MetricsService } from '../metrics/metrics.service';
+import { INTERNAL_TOKEN_HEADER, isBlockedPath } from './blocked-paths';
 import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
 import { LoadBalancerService } from './load-balancer.service';
 import { EurekaLookupError, NoHealthyInstanceError } from './proxy.errors';
+import { UPSTREAM_TIMEOUT_MS } from './upstream-timeout';
 
 interface ProxyContext {
   target: string;
   app: string;
   startedAt: bigint;
+  timedOut?: boolean;
 }
 
 @Controller()
@@ -32,7 +36,35 @@ export class ProxyController {
       return context.target;
     },
     on: {
-      proxyRes: (_proxyRes, req) => {
+      proxyReq: (proxyReq, req, res) => {
+        // Set here rather than via `proxyTimeout` so the abort can be told
+        // apart from an upstream reset and answered 504 instead of 502.
+        // Armed only once the client body is in: a client stalling its own
+        // upload is not an upstream timeout (Node's requestTimeout covers it).
+        const armTimeout = () =>
+          proxyReq.setTimeout(this.upstreamTimeoutMs, () => {
+            if (res.headersSent) {
+              // Too late for a 504, and pipe() would never end `res`.
+              res.destroy();
+              return;
+            }
+            const context = this.contexts.get(req);
+            if (context) context.timedOut = true;
+            proxyReq.destroy();
+          });
+        if (req.readableEnded) armTimeout();
+        else req.once('end', armTimeout);
+        // http-proxy only aborts on `aborted`, which Node no longer emits once
+        // the request body has been read — a client leaving while we wait for
+        // the response would otherwise keep the upstream request open.
+        res.on('close', () => {
+          if (!res.writableFinished) proxyReq.destroy();
+        });
+      },
+      proxyRes: (proxyRes, req) => {
+        if (this.gatewayConfig.getCorsAllowedOrigins()) {
+          stripUpstreamCorsHeaders(proxyRes.headers);
+        }
         const context = this.contexts.get(req);
         if (context) {
           const seconds =
@@ -40,12 +72,19 @@ export class ProxyController {
           this.metrics.observeUpstream(context.app, seconds);
         }
       },
-      error: (_err, _req, res) => {
+      error: (_err, req, res) => {
+        const timedOut = this.contexts.get(req)?.timedOut === true;
         if ('writeHead' in res && !res.headersSent) {
-          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.writeHead(timedOut ? 504 : 502, {
+            'Content-Type': 'application/json',
+          });
         }
         if ('end' in res) {
-          res.end(JSON.stringify({ message: 'Bad Gateway' }));
+          res.end(
+            JSON.stringify({
+              message: timedOut ? 'Gateway Timeout' : 'Bad Gateway',
+            }),
+          );
         }
       },
     },
@@ -56,6 +95,7 @@ export class ProxyController {
     private readonly loadBalancer: LoadBalancerService,
     private readonly metrics: MetricsService,
     private readonly gatewayConfig: GatewayConfigService,
+    @Inject(UPSTREAM_TIMEOUT_MS) private readonly upstreamTimeoutMs: number,
   ) {}
 
   // Express 5 (path-to-regexp v8) rejects the bare '*' wildcard used in
@@ -74,7 +114,9 @@ export class ProxyController {
       return;
     }
 
-    const appName = this.routeResolver.resolve(req.path);
+    const appName = isBlockedPath(req.path)
+      ? undefined
+      : this.routeResolver.resolve(req.path);
     if (!appName) {
       res.status(404).json({ message: 'Not Found' });
       return;
@@ -95,6 +137,14 @@ export class ProxyController {
       throw err;
     }
 
+    // The client left during the lookup: its `close` already fired, so the
+    // cancel listener in `proxyReq` would never run.
+    if (req.socket.destroyed) return;
+
+    delete req.headers[INTERNAL_TOKEN_HEADER];
+    // Node already answered `100 Continue` to the client; forwarding `Expect`
+    // also makes http-proxy skip the `proxyReq` hook (timeout, cancel).
+    delete req.headers.expect;
     this.contexts.set(req, {
       target: targetUrl,
       app: appName,
