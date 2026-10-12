@@ -164,6 +164,46 @@ docs:
   The Authorize button only appears for documents that declare a security
   scheme (e.g. `bearerAuth`).
 
+#### Docs-only Basic auth (production)
+
+Without `docs.basicAuth` the page and the listed OpenAPI documents are open as
+described above (dev). For an environment that must not show them to everyone,
+set a docs-only HTTP Basic credential and the gateway asks for it instead of a JWT:
+
+```yaml
+docs:
+  enabled: true
+  requireAuth: true     # boot fails if basicAuth is missing (e.g. a missing Vault secret)
+  tryItOut: false       # hide "Try it out" so docs cannot change real data
+  # basicAuth comes from Vault (secret/gateway), never from the yml file:
+  #   docs.basicAuth.username / docs.basicAuth.password (password 12-128 chars)
+```
+
+- With `basicAuth` set, `GET`/`HEAD` on `/docs` and below **and** on every
+  `docs.services[].url` need `Authorization: Basic ...`; otherwise 401 with
+  `WWW-Authenticate: Basic realm="docs"` (the browser shows its login box) and no
+  document content. A JWT does not open them and a docs credential opens nothing
+  else. A service document needs no `publicPaths` entry then, and one that is
+  listed there is still protected.
+- The `Authorization` header is removed before the request reaches the service,
+  so the docs credential is never forwarded. Credentials are compared in
+  constant time and never logged or put in error messages.
+- `requireAuth: true` without `basicAuth` fails boot (the gateway's usual
+  fail-fast), so a missing Vault entry cannot leave the docs open. Keep
+  `requireAuth: false` (the default) in dev.
+- The page works under a public path prefix such as `/expo`: it derives its base
+  path from the address it was loaded from (`/expo/docs` loads `/expo/docs/...`,
+  and service documents are fetched from `/expo/<prefix>/v3/api-docs`). The
+  reverse proxy in front of the gateway must strip that prefix.
+- Browsers cache Basic credentials per origin and realm, so the service-document
+  requests that the page makes are expected to reuse them; if a browser asks
+  again for each service, that is the browser, not the gateway.
+- "Try it out" requests are rewritten to the gateway origin only; under a path
+  prefix they do not get the prefix added. That is acceptable while `tryItOut`
+  is `false`.
+- The credential is a single shared value; rotate it in Vault and restart the
+  gateway. Docs requests share the per-IP rate limit, which also limits guessing.
+
 Path convention: each service serves its OpenAPI JSON under its own gateway
 prefix as `/{prefix}/v3/api-docs` (for example `/attendance/v3/api-docs`).
 The gateway proxies it like any request; it does not rewrite paths.

@@ -23,3 +23,19 @@ export function isPublicDocsRequest(
     (requestMethod === 'GET' || requestMethod === 'HEAD')
   );
 }
+
+/**
+ * 문서 자격 증명을 요구하는 요청인지 본다: `/docs` 화면과 `docs.services[].url`
+ * (서비스의 OpenAPI JSON)의 GET/HEAD. 서비스 JSON은 정확히 그 경로만 해당한다.
+ */
+export function isDocsResourceRequest(
+  serviceUrls: readonly string[],
+  path: string,
+  method: string,
+): boolean {
+  const requestMethod = method.toUpperCase();
+  if (requestMethod !== 'GET' && requestMethod !== 'HEAD') {
+    return false;
+  }
+  return isDocsPath(path) || serviceUrls.includes(path);
+}

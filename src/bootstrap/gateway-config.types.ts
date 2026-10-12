@@ -65,6 +65,23 @@ export interface DocsConfig {
   readonly enabled: boolean;
   readonly title?: string;
   readonly services?: readonly DocsServiceConfig[];
+  /**
+   * `true`이면 `basicAuth`가 반드시 있어야 부팅한다. 비밀(Vault)이 빠졌을 때 문서가
+   * 인증 없이 열리지 않게 하는 운영용 안전장치다. 기본은 `false`(dev).
+   */
+  readonly requireAuth?: boolean;
+  /**
+   * 문서 전용 HTTP Basic 자격 증명. 있으면 `/docs`와 `docs.services[].url`의 조회에
+   * JWT 대신 이 자격 증명을 요구한다. 값은 Vault에서 병합되며 로그·응답에 싣지 않는다.
+   */
+  readonly basicAuth?: DocsBasicAuthConfig;
+  /** `false`이면 문서 화면에서 `Try it out`을 막는다. 기본은 `true`. */
+  readonly tryItOut?: boolean;
+}
+
+export interface DocsBasicAuthConfig {
+  readonly username: string;
+  readonly password: string;
 }
 
 export interface InstanceEnv {
