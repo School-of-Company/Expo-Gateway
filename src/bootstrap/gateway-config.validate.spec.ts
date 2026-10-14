@@ -161,6 +161,19 @@ describe('parseGatewayConfig', () => {
     ).toThrow(InvalidGatewayConfigError);
   });
 
+  it('accepts a signin policy and rejects a malformed one', () => {
+    const withPolicy = (signin: unknown) => ({
+      ...valid,
+      rateLimit: { ttlSeconds: 60, limit: 100, signin },
+    });
+    expect(() =>
+      parseGatewayConfig(withPolicy({ ttlSeconds: 600, limit: 10 })),
+    ).not.toThrow();
+    expect(() =>
+      parseGatewayConfig(withPolicy({ ttlSeconds: 600, limit: 0 })),
+    ).toThrow(InvalidGatewayConfigError);
+  });
+
   it('accepts exact cors origins', () => {
     expect(() =>
       parseGatewayConfig({
