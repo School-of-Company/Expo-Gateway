@@ -209,6 +209,7 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
         'participantAuthCode' in rateLimit
           ? rateLimit.participantAuthCode
           : undefined,
+      signin: 'signin' in rateLimit ? rateLimit.signin : undefined,
     };
     for (const [name, policy] of Object.entries(policies)) {
       if (policy !== undefined && !isPositiveIntegerPolicy(policy)) {

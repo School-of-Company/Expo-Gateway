@@ -19,6 +19,11 @@ export interface RateLimitConfig {
     readonly ttlSeconds: number;
     readonly limit: number;
   };
+  /** IP budget for `POST /auth/signin` (brute-force guard; the User Server has no lockout). */
+  readonly signin?: {
+    readonly ttlSeconds: number;
+    readonly limit: number;
+  };
 }
 
 export interface EurekaSharedConfig {
