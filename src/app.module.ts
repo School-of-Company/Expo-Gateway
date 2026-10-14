@@ -101,6 +101,31 @@ import { HealthController } from './health/health.controller';
               },
             ]
           : []),
+        ...(config.rateLimit?.signin
+          ? [
+              {
+                name: 'signin',
+                ttl: config.rateLimit.signin.ttlSeconds * 1000,
+                limit: config.rateLimit.signin.limit,
+                // Brute-force guard for login attempts, per IP. Only the
+                // login call is counted, not the rest of /auth.
+                skipIf: (context: ExecutionContext) => {
+                  const { method, path } = context
+                    .switchToHttp()
+                    .getRequest<Request>();
+                  // Compare what the backend will route (`%73ignin`, `signin;x`).
+                  let target = path;
+                  try {
+                    target = decodeURIComponent(path);
+                  } catch {
+                    // Undecodable: the proxy answers 404 without forwarding.
+                  }
+                  target = target.split(';')[0].replace(/\/+$/, '');
+                  return method !== 'POST' || target !== '/auth/signin';
+                },
+              },
+            ]
+          : []),
       ],
     }),
     ProxyModule,

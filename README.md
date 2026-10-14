@@ -118,6 +118,12 @@ Application participant APIs (Gateway #29) authenticate with the HttpOnly
   allowed origins). The per-phone-number limit belongs to
   User Server / Notification Server (the gateway never reads bodies).
 
+- **Login brute force.** `rateLimit.signin` (same shape as `survey`) budgets
+  `POST /auth/signin` per client IP (encoded / `;` variants included) and
+  returns 429 with `Retry-After-signin`. The User Server has no lockout. The
+  budget is per client IP, so it only helps once `trust proxy` matches the
+  real hop count in front of the gateway.
+
 The public path list, the `/participant-auth` routing prefix, `cors` and
 `participantAuthCode` values live in Config Server `gateway-{profile}.yml`; this
 gateway change alone opens nothing.
