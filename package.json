@@ -25,7 +25,7 @@
   "dependencies": {
     "@nestjs/common": "^11.2.5",
     "@nestjs/core": "^11.2.5",
-    "@nestjs/platform-express": "^11.2.5",
+    "@nestjs/platform-express": "^11.2.7",
     "@nestjs/throttler": "^6.7.1",
     "@school-of-company/nestjs-eureka": "^0.1.0",
     "http-proxy-middleware": "^3.0.7",
