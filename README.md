@@ -53,9 +53,40 @@ Exceeding it returns HTTP 429 with `Retry-After-survey`. Pick the value with
 shared booth IPs in mind: many devices behind one address share the budget.
 
 Limits use the existing in-memory throttler storage per Gateway instance and
-reset on restart. The deployment must restrict direct Gateway access and
-forward client IPs through the trusted proxy. Notification Server's Redis
-limits remain separate.
+reset on restart. Notification Server's Redis limits remain separate.
+
+### Client IP (`trustedProxies`)
+
+Every IP budget keys on Express `req.ip`. `trust proxy` is never a hop count:
+it is loopback (Apache on the same host) plus the optional `trustedProxies`
+list from Config Server. Express walks `X-Forwarded-For` from the right and
+stops at the first address it does not trust.
+
+```yaml
+trustedProxies:        # optional; absent = loopback only
+  - <Next server egress IP>
+```
+
+| Path to the gateway | `req.ip` |
+|---|---|
+| browser → Next (listed) → Apache → gateway | the browser IP Next forwarded |
+| client → Apache directly, forged `X-Forwarded-For` | the client's real IP (Apache appends it) |
+| unlisted hop in front of Next | that hop's IP, nothing further left |
+| non-loopback peer on the gateway port | the peer itself, header ignored |
+
+- Entries are `"IP"` or `"IP/prefix"`, IPv4 `/24` or narrower and IPv6 `/64` or
+  narrower. Ranges like `0.0.0.0/0`, IPv4-mapped IPv6 (write the IPv4 form),
+  zone ids and names such as `loopback` fail boot validation. A hop count like
+  `2` is not accepted: `/expo/` is reachable through Apache directly, so the
+  forged first `X-Forwarded-For` value would become `req.ip`.
+- Without `trustedProxies`, every login through Next counts against the Next
+  server's IP (one shared budget), and a direct client is still counted by its
+  real IP. Only list the Next server once its egress IP is confirmed (a fixed
+  address such as an Elastic IP); a changed IP silently falls back to the
+  shared budget.
+- Next forwards the browser IP only when Expo-Client `TRUSTED_PROXY_HOPS` is
+  set. Listing Next here without it changes nothing.
+- Config is read at boot only: restart the gateway after changing it.
 
 Public SMS methods and profile settings belong to
 [Config Server #26](https://github.com/School-of-Company/Expo-Config-Server/issues/26).
@@ -120,9 +151,9 @@ Application participant APIs (Gateway #29) authenticate with the HttpOnly
 
 - **Login brute force.** `rateLimit.signin` (same shape as `survey`) budgets
   `POST /auth/signin` per client IP (encoded / `;` variants included) and
-  returns 429 with `Retry-After-signin`. The User Server has no lockout. The
-  budget is per client IP, so it only helps once `trust proxy` matches the
-  real hop count in front of the gateway.
+  returns 429 with `Retry-After-signin`. The budget is per client IP (see
+  [Client IP](#client-ip-trustedproxies)); until the Next server is listed in
+  `trustedProxies`, logins through Next share one budget.
 
 The public path list, the `/participant-auth` routing prefix, `cors` and
 `participantAuthCode` values live in Config Server `gateway-{profile}.yml`; this

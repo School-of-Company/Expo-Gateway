@@ -1,8 +1,6 @@
 import * as http from 'node:http';
 import * as request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
-import type { Express } from 'express';
-import { ExpressAdapter } from '@nestjs/platform-express';
 import { parseGatewayConfig } from '../src/bootstrap/gateway-config.validate';
 import {
   createTestApp,
@@ -51,11 +49,6 @@ describe('Public survey submit IP limit (e2e)', () => {
       }),
       eurekaInstances: [instance({ port: address.port })],
     });
-    const adapter = app.getHttpAdapter();
-    if (!(adapter instanceof ExpressAdapter)) {
-      throw new Error('Expected the production Express adapter');
-    }
-    adapter.getInstance<Express>().set('trust proxy', 1);
   });
 
   afterEach(async () => {
