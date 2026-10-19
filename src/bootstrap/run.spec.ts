@@ -30,11 +30,13 @@ const validConfig = {
 
 function makeFakeApp() {
   const publicServer = { once: jest.fn() };
+  const express = { set: jest.fn() };
   return {
     publicServer,
+    express,
     app: {
       enableShutdownHooks: jest.fn(),
-      getHttpAdapter: () => ({ getInstance: () => ({ set: jest.fn() }) }),
+      getHttpAdapter: () => ({ getInstance: () => express }),
       getHttpServer: () => publicServer,
       get: jest.fn().mockReturnValue({ metrics: true }),
       listen: jest.fn().mockResolvedValue(undefined),
@@ -129,6 +131,22 @@ describe('runBootstrap', () => {
     expect(onClose[0]).toBe('close');
     onClose[1]();
     expect(metricsServer.close).toHaveBeenCalled();
+  });
+
+  it('trusts loopback plus the configured proxies, never a hop count', async () => {
+    mockedFetch.mockResolvedValue({
+      ...validConfig,
+      trustedProxies: ['198.51.100.7'],
+    });
+    const { app, express } = makeFakeApp();
+    mockedCreate.mockResolvedValue(app);
+
+    await runBootstrap(jest.fn());
+
+    expect(express.set).toHaveBeenCalledWith('trust proxy', [
+      'loopback',
+      '198.51.100.7',
+    ]);
   });
 
   it('keeps serving when the metrics server cannot bind', async () => {
