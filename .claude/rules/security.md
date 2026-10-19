@@ -125,3 +125,11 @@ commit it.
 - Never log a JWT (valid or invalid), a public/private key, or the Config Server response body.
 - Use structured logging (JSON) if logging is expanded beyond the current `Logger` calls in
   `bootstrap/run.ts`.
+
+## Client IP (`trust proxy`)
+
+- `trust proxy` is `['loopback', ...trustedProxies]` (`bootstrap/trust-proxy.ts`), never a hop
+  count or `true`: `/expo/` is reachable through Apache directly, so a count would turn a forged
+  `X-Forwarded-For` into `req.ip` and let a client dodge every IP budget.
+- `trustedProxies` holds specific hosts (IPv4 `/24`+, IPv6 `/64`+); do not loosen the validation
+  to accept wide ranges or names. Do not add a production IP without evidence it is fixed.

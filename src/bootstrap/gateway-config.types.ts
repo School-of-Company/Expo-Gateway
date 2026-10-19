@@ -48,6 +48,11 @@ export interface GatewayConfig {
   publicPaths?: string[];
   docs?: DocsConfig;
   cors?: CorsConfig;
+  /**
+   * Proxies trusted for X-Forwarded-For besides loopback (`"IP"` or
+   * `"IP/prefix"`). See `bootstrap/trust-proxy.ts`.
+   */
+  trustedProxies?: string[];
 }
 
 /**

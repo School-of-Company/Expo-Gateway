@@ -11,6 +11,7 @@ import { startMetricsServer } from '../metrics/metrics.server';
 import { readBootEnv, readMetricsBind, readMetricsEnabled } from './env';
 import type { GatewayConfig } from './gateway-config.types';
 import { setMetricsRuntime } from './metrics-runtime-holder';
+import { trustProxy } from './trust-proxy';
 
 export async function runBootstrap(
   exit: (code: number) => void = (code) => process.exit(code),
@@ -66,7 +67,10 @@ export async function runBootstrap(
   try {
     const app = await NestFactory.create(AppModule, GATEWAY_APP_OPTIONS);
     app.enableShutdownHooks();
-    (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
+    (app.getHttpAdapter().getInstance() as Express).set(
+      'trust proxy',
+      trustProxy(config),
+    );
     (app.getHttpServer() as Server).once('close', () => metricsServer?.close());
     await app.listen(resolvedPort);
   } catch (err) {

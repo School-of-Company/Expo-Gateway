@@ -1,6 +1,7 @@
 import type { Server } from 'node:net';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import {
   EurekaService,
   type EurekaInstance,
@@ -12,6 +13,7 @@ import {
   resetGatewayConfigForTests,
 } from '../../src/bootstrap/gateway-config-holder';
 import type { GatewayConfig } from '../../src/bootstrap/gateway-config.types';
+import { trustProxy } from '../../src/bootstrap/trust-proxy';
 import { UPSTREAM_TIMEOUT_MS } from '../../src/proxy/upstream-timeout';
 
 export interface TestAppOptions {
@@ -46,7 +48,12 @@ export async function createTestApp(
   }
   const moduleRef = await builder.compile();
 
-  const app = moduleRef.createNestApplication(GATEWAY_APP_OPTIONS);
+  const app =
+    moduleRef.createNestApplication<NestExpressApplication>(
+      GATEWAY_APP_OPTIONS,
+    );
+  // Same as bootstrap/run.ts; supertest connects from loopback, like Apache.
+  app.set('trust proxy', trustProxy(options.gatewayConfig));
   // Bind 127.0.0.1 ourselves: supertest's own `listen(0)` binds `::` but
   // connects to 127.0.0.1, so another process listening on 127.0.0.1 with the
   // same port number would answer instead of this app (#41).

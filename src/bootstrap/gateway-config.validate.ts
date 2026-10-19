@@ -1,6 +1,7 @@
 import { isValidPublicPathEntry } from '../auth/public-path.matcher';
 import { isExactOrigin } from '../cors/cors.policy';
 import type { GatewayConfig } from './gateway-config.types';
+import { isTrustedProxyEntry } from './trust-proxy';
 
 export class InvalidGatewayConfigError extends Error {
   constructor(reason: string) {
@@ -249,6 +250,16 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
         'cors.allowedOrigins must be a non-empty array of exact http(s) origins (no "*", path or trailing slash)',
       );
     }
+  }
+
+  if (
+    candidate.trustedProxies !== undefined &&
+    (!Array.isArray(candidate.trustedProxies) ||
+      !candidate.trustedProxies.every(isTrustedProxyEntry))
+  ) {
+    throw new InvalidGatewayConfigError(
+      'trustedProxies must be an array of "IP" or "IP/prefix" strings (IPv4 /24 or narrower, IPv6 /64 or narrower, no IPv4-mapped IPv6)',
+    );
   }
 
   if (candidate.port !== undefined && typeof candidate.port !== 'number') {
