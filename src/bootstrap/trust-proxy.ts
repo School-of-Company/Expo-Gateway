@@ -7,13 +7,16 @@ import type { GatewayConfig } from './gateway-config.types';
  * anyone inside it forge X-Forwarded-For (`0.0.0.0/0` trusts the internet).
  * IPv4-mapped IPv6 is rejected: write the IPv4 form (a mapped `::ffff:0:0/96`
  * would cover the whole IPv4 internet while looking like a narrow v6 range).
+ * IPv6 with a trailing dotted quad (`::198.51.100.7`, `2001:db8::1.2.3.4`) is
+ * rejected too: Node's `isIP` accepts it, but Express's parser (proxy-addr)
+ * throws "invalid IP address", which would fail boot after Nest is created.
  */
 export function isTrustedProxyEntry(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const match = /^([^/]+)(?:\/(\d{1,3}))?$/.exec(value);
   if (!match || match[1].includes('%')) return false;
   const family = isIP(match[1]);
-  if (family === 0) return false;
+  if (family === 0 || (family === 6 && match[1].includes('.'))) return false;
   const [min, max] = family === 4 ? [24, 32] : [64, 128];
   const prefix = match[2] === undefined ? max : Number(match[2]);
   if (prefix < min || prefix > max) return false;

@@ -105,10 +105,14 @@ describe('trustProxy (real Express req.ip)', () => {
 });
 
 describe('trustedProxies validation', () => {
-  it.each([NEXT, '198.51.100.0/24', '2001:db8::1', '2001:db8::/64'])(
-    'accepts %s',
-    (entry) => expect(isTrustedProxyEntry(entry)).toBe(true),
-  );
+  it.each([
+    NEXT,
+    '198.51.100.0/24',
+    '2001:db8::1',
+    '2001:DB8:0:0:1::5',
+    '2001:db8::/64',
+    '2001:db8:0:0:1::5/128',
+  ])('accepts %s', (entry) => expect(isTrustedProxyEntry(entry)).toBe(true));
 
   it.each([
     '0.0.0.0/0',
@@ -119,6 +123,9 @@ describe('trustedProxies validation', () => {
     '2001:db8::/129',
     '::ffff:198.51.100.7',
     '::ffff:0:0/96',
+    '::198.51.100.7',
+    '2001:db8::1.2.3.4',
+    '::0.0.0.0/64',
     '0:0:0:0:0:ffff:c633:6407',
     'fe80::1%eth0',
     'loopback',
