@@ -262,6 +262,23 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     );
   }
 
+  if (candidate.bff !== undefined) {
+    const bff = candidate.bff;
+    if (typeof bff !== 'object' || bff === null || Array.isArray(bff)) {
+      throw new InvalidGatewayConfigError('bff must be an object when present');
+    }
+    // The value is a secret: report which key is wrong, never the value.
+    const { token } = bff as Record<string, unknown>;
+    if (
+      token !== undefined &&
+      (typeof token !== 'string' || !/^[\x21-\x7e]{32,256}$/.test(token))
+    ) {
+      throw new InvalidGatewayConfigError(
+        'bff.token must be 32 to 256 visible ASCII characters (no spaces)',
+      );
+    }
+  }
+
   if (candidate.port !== undefined && typeof candidate.port !== 'number') {
     throw new InvalidGatewayConfigError('port must be a number when present');
   }

@@ -133,3 +133,8 @@ commit it.
   `X-Forwarded-For` into `req.ip` and let a client dodge every IP budget.
 - `trustedProxies` holds specific hosts (IPv4 `/24`+, IPv6 `/64`+); do not loosen the validation
   to accept wide ranges or names. Do not add a production IP without evidence it is fixed.
+- The BFF (Vercel, no fixed IP) is trusted by `X-Bff-Token` = `bff.token` (Vault, constant-time
+  compare via `proxy/client-ip.ts`), never by IP. Only then does the rate-limit key move one
+  `X-Forwarded-For` entry left of `req.ip`; it never changes `req.ip` itself or anything but the
+  throttler key. The header is stripped before forwarding, and the token is never logged or put in
+  an error message.

@@ -53,6 +53,16 @@ export interface GatewayConfig {
    * `"IP/prefix"`). See `bootstrap/trust-proxy.ts`.
    */
   trustedProxies?: string[];
+  /** Expo-Client BFF trust. See `proxy/client-ip.ts`. */
+  bff?: BffConfig;
+}
+
+export interface BffConfig {
+  /**
+   * Shared secret the BFF sends as `X-Bff-Token`. Merged from Vault
+   * `secret/gateway`, never logged. Absent = the header is ignored.
+   */
+  readonly token?: string;
 }
 
 /**
