@@ -10,13 +10,14 @@ export const CORS_ALLOWED_METHODS = 'GET, POST, PUT, PATCH, DELETE';
  * the admin JWT.
  */
 export const CORS_ALLOWED_HEADERS =
-  'Authorization, Content-Type, X-CSRF-TOKEN, X-XSRF-TOKEN, Idempotency-Key';
+  'Authorization, Content-Type, X-CSRF-TOKEN, X-XSRF-TOKEN, Idempotency-Key, X-Scanner-Name';
 /**
  * `GET .../my-applications` hands the cancellation token back in
- * `X-CSRF-TOKEN`; the SMS-code budget's wait time is in its `Retry-After-*`.
+ * `X-CSRF-TOKEN`; each rate-limit budget's wait time is in its own
+ * `Retry-After-<budget>` header.
  */
 export const CORS_EXPOSED_HEADERS =
-  'X-CSRF-TOKEN, Retry-After-participantAuthCode';
+  'X-CSRF-TOKEN, Retry-After-participantAuthCode, Retry-After-sms, Retry-After-survey, Retry-After-signin';
 export const CORS_MAX_AGE_SECONDS = '600';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

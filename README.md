@@ -130,8 +130,9 @@ Application participant APIs (Gateway #29) authenticate with the HttpOnly
   An allowed `Origin` is echoed with `Access-Control-Allow-Credentials: true`
   and `Vary: Origin`; preflights are answered by the gateway (204, methods
   `GET POST PUT PATCH DELETE`, headers `Authorization Content-Type X-CSRF-TOKEN
-  X-XSRF-TOKEN Idempotency-Key`, max-age 600) and never reach a backend;
-  `X-CSRF-TOKEN` is exposed to the page. Upstream `Access-Control-*` headers are
+  X-XSRF-TOKEN Idempotency-Key X-Scanner-Name`, max-age 600) and never reach a backend;
+  `X-CSRF-TOKEN` and `Retry-After-participantAuthCode`/`-sms`/`-survey`/`-signin`
+  are exposed to the page. Upstream `Access-Control-*` headers are
   dropped so the gateway is the single CORS owner. Invalid origins fail boot.
 - **CSRF (gateway half).** With `cors` set, a POST/PUT/PATCH/DELETE whose
   `Origin` is present but not allowed gets 403 before it is forwarded or
