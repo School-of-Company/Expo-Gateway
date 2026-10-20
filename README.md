@@ -86,6 +86,21 @@ trustedProxies:        # optional; absent = loopback only
   shared budget.
 - Next forwards the browser IP only when Expo-Client `TRUSTED_PROXY_HOPS` is
   set. Listing Next here without it changes nothing.
+- **BFF behind Vercel (`bff.token`).** The Expo-Client BFF runs on Vercel with
+  no fixed egress IP, so it cannot be listed above and `req.ip` is the BFF.
+  When a request's `X-Bff-Token` equals `bff.token` (constant-time compare),
+  every IP budget (default, `sms`, `survey`, `participantAuthCode`, `signin`)
+  counts the `X-Forwarded-For` entry just left of `req.ip` — the user IP the
+  BFF reported — instead. A missing or wrong header, or an entry that is not a
+  plain IPv4/IPv6 address (IPv4-mapped IPv6 included), keeps `req.ip`. The
+  header is never forwarded downstream.
+  ```yaml
+  bff:
+    token: <from Vault secret/gateway>   # 32-256 visible ASCII chars
+  ```
+  Put the token in Vault `secret/gateway` as `{"bff": {"token": "..."}}`, never
+  in the yml. Absent = the feature is off and the header is ignored; a
+  malformed value fails boot validation.
 - Config is read at boot only: restart the gateway after changing it.
 
 Public SMS methods and profile settings belong to
