@@ -231,6 +231,43 @@ describe('parseGatewayConfig', () => {
       }),
     ).not.toThrow();
   });
+  describe('bff', () => {
+    const token = 'a'.repeat(32);
+
+    it('accepts a token, an empty bff and no bff at all', () => {
+      expect(() =>
+        parseGatewayConfig({ ...valid, bff: { token } }),
+      ).not.toThrow();
+      expect(() => parseGatewayConfig({ ...valid, bff: {} })).not.toThrow();
+      expect(parseGatewayConfig(valid).bff).toBeUndefined();
+    });
+
+    it.each([
+      ['a non-object bff', 'x'],
+      ['a null bff', null],
+      ['a non-string token', { token: 123 }],
+      ['a short token', { token: 'a'.repeat(31) }],
+      ['a long token', { token: 'a'.repeat(257) }],
+      ['a token with a space', { token: `${'a'.repeat(32)} b` }],
+      ['a non-ASCII token', { token: `${'a'.repeat(32)}한` }],
+    ])('rejects %s', (_name, bff) => {
+      expect(() => parseGatewayConfig({ ...valid, bff })).toThrow(
+        InvalidGatewayConfigError,
+      );
+    });
+
+    it('does not put the token in the error message', () => {
+      const secret = `${'s'.repeat(32)} leaked`;
+      try {
+        parseGatewayConfig({ ...valid, bff: { token: secret } });
+        throw new Error('should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidGatewayConfigError);
+        expect((error as Error).message).not.toContain('leaked');
+      }
+    });
+  });
+
   describe('docs', () => {
     const docs = (overrides: Record<string, unknown> = {}) => ({
       ...valid,

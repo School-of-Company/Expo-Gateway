@@ -6,6 +6,7 @@ import { stripUpstreamCorsHeaders } from '../cors/cors.policy';
 import { isDocsPath } from '../docs/docs.paths';
 import { MetricsService } from '../metrics/metrics.service';
 import { INTERNAL_TOKEN_HEADER, isBlockedPath } from './blocked-paths';
+import { BFF_TOKEN_HEADER } from './client-ip';
 import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
 import { LoadBalancerService } from './load-balancer.service';
@@ -142,6 +143,7 @@ export class ProxyController {
     if (req.socket.destroyed) return;
 
     delete req.headers[INTERNAL_TOKEN_HEADER];
+    delete req.headers[BFF_TOKEN_HEADER];
     // Node already answered `100 Continue` to the client; forwarding `Expect`
     // also makes http-proxy skip the `proxyReq` hook (timeout, cancel).
     delete req.headers.expect;
