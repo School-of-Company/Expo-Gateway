@@ -93,6 +93,13 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  private readonly rejectedInstances = new Counter({
+    name: 'gateway_upstream_rejected_instances_total',
+    help: 'Eureka instances skipped because their address or port is outside the upstream policy',
+    labelNames: ['app'],
+    registers: [this.registry],
+  });
+
   constructor() {
     collectDefaultMetrics({ register: this.registry });
   }
@@ -136,6 +143,10 @@ export class MetricsService {
 
   recordPollFailure(app: string): void {
     this.pollFailures.inc({ app });
+  }
+
+  recordRejectedInstances(app: string, count: number): void {
+    this.rejectedInstances.inc({ app }, count);
   }
 
   get contentType(): string {

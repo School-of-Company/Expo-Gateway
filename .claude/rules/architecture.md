@@ -76,6 +76,8 @@ custom `@nestjs/config` loader (this repo deliberately doesn't depend on `@nestj
   sign function here — this gateway never issues tokens.
 - `proxy/route-resolver.service.ts`: pure prefix-matching logic (longest prefix wins), reads the
   routing table from `GatewayConfigService`, never hardcodes a prefix→app-name mapping.
+- `proxy/upstream-policy.ts`: pure address/port policy compiled once from `upstream` config; the
+  only place that decides whether a Eureka-reported instance may receive traffic.
 - `proxy/load-balancer.service.ts`: one `getInstances()` call per request, filter to `UP`, round
   robin. No retry against a different instance on failure, no caching, no extra health check beyond
   Eureka's own status — this is a deliberate fail-fast choice (see below), not an oversight.
