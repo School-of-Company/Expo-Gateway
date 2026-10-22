@@ -5,6 +5,7 @@ import type {
   RateLimitConfig,
   RoutingConfig,
 } from '../bootstrap/gateway-config.types';
+import type { UpstreamPolicyConfig } from '../proxy/upstream-policy';
 import { GATEWAY_CONFIG } from './gateway-config.tokens';
 import { DEFAULT_RATE_LIMIT } from './gateway-config.defaults';
 
@@ -47,6 +48,10 @@ export class GatewayConfigService {
   /** Exact allowed browser origins; `undefined` turns CORS and the `Origin` check off. */
   getCorsAllowedOrigins(): readonly string[] | undefined {
     return this.config.cors?.allowedOrigins;
+  }
+
+  getUpstream(): UpstreamPolicyConfig | undefined {
+    return this.config.upstream;
   }
 
   getPort(): number | undefined {

@@ -68,3 +68,15 @@ groups:
         annotations:
           summary: "Background Eureka poll failing for {{ $labels.app }}"
           description: gateway_upstream_healthy_instances is dropped while polls fail, so it is not reporting.
+
+      - alert: GatewayUpstreamInstancesRejected
+        expr: increase(gateway_upstream_rejected_instances_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.app }}: Eureka instances skipped by the upstream policy"
+          description: >-
+            An instance registered in Eureka has an address or port outside
+            `upstream` (or a link-local/unspecified address) and receives no
+            traffic. Check the gateway log for which one and who registered it.

@@ -138,3 +138,18 @@ commit it.
   `X-Forwarded-For` entry left of `req.ip`; it never changes `req.ip` itself or anything but the
   throttler key. The header is stripped before forwarding, and the token is never logged or put in
   an error message.
+
+## Upstream Targets (Eureka)
+
+- Eureka says who is `UP`, not where traffic may go. `LoadBalancerService` only proxies to an
+  instance that passes `proxy/upstream-policy.ts`: `ipAddr` must be a plain IP literal (no
+  hostname), `port` an integer 1-65535, and the address never unspecified, link-local (cloud
+  metadata `169.254.169.254`, also as `::ffff:...`), multicast or broadcast — whatever `upstream`
+  says, so `allowedCidrs: ["0.0.0.0/0"]` cannot reach those.
+- `upstream.allowedCidrs` / `upstream.allowedPorts` narrow it further; absent, loopback and private
+  ranges stay allowed (local development). Production should set both.
+- A rejected instance is skipped, counted in `gateway_upstream_rejected_instances_total{app}` and
+  logged once per address (never as a metric label). All rejected → 503, like no healthy instance.
+- Restricting who may register in Eureka itself is the real fix and lives in the infrastructure;
+  this is the gateway's second line.
+
