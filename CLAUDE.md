@@ -114,6 +114,28 @@ process — no retry, matching every other service in this MSA.
 
 ---
 
+## Logging
+
+The Expo log standard, shared by every service (Spring and Nest) so the shared Loki in Expo-Monitoring labels them the same way:
+
+- Every line on stdout is one JSON object with at least `@timestamp` (ISO-8601), `level` (uppercase
+  `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`; Nest `fatal` is written as `ERROR`, `verbose` as `TRACE`),
+  `service` (`expo-gateway`, the Eureka app name), `module` and `message`. Errors add `stack_trace`.
+  Nothing else goes to stdout — never `console.log`.
+- The log pipeline reads only these key names and has no per-service fallback. If the gateway's logs
+  are missing or mis-labelled, fix the log output here, never add parsing fallbacks to the pipeline.
+- `src/logging/json-logger.ts` (`JsonLogger`, pino) is installed with `Logger.overrideLogger()` in
+  `main.ts` **before** `runBootstrap()`, so pre-Nest bootstrap lines and fail-fast exits are JSON too.
+  `module` is the Nest logger context (`new Logger(Foo.name)`), the same mapping as nestjs-pino's
+  `renameContext: 'module'`; lines without a context get `app`. Never pass `module` at the call site.
+- `LOG_LEVEL` (default `info`). With `PROFILE=local` stdout is also mirrored to
+  `${EXPO_LOG_DIR:-~/.expo/logs}/expo-gateway/app.log` for the local Loki file tail. Other profiles
+  write stdout only (pm2 captures it); add no log file settings there.
+- No request/access log: per-request data lives in metrics. Never log a JWT, key, header value, or
+  the Config Server body.
+
+---
+
 ## Load test (`load-test/`)
 
 - `node load-test/run.mjs run --target local --fast` validates the harness on this machine (stub

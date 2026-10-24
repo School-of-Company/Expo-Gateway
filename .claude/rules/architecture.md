@@ -12,6 +12,7 @@ src/
 │                    request-metrics middleware, background Eureka poller.
 ├── metrics/       — MetricsService (prom-client registry) + the separate-port /metrics server.
 ├── cors/          — Credentialed CORS + Origin check on writes (middleware, before guards).
+├── logging/       — JsonLogger (pino): the standard JSON log line, installed in main.ts before bootstrap.
 └── health/        — GET /health only. Nothing else belongs here.
 ```
 
