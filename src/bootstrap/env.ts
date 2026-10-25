@@ -63,3 +63,25 @@ export function readMetricsBind(): MetricsBind {
   }
   return { host, port };
 }
+
+export interface LogEnv {
+  level: string;
+  /** Set only for the `local` profile: stdout is also mirrored to a file there. */
+  logDir?: string;
+}
+
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'];
+
+/**
+ * Never throws: the logger is installed before readBootEnv() so that its own
+ * failures are logged as JSON too.
+ */
+export function readLogEnv(defaultLogDir: string): LogEnv {
+  const raw = (process.env.LOG_LEVEL ?? 'info').toLowerCase();
+  const level = LOG_LEVELS.includes(raw) ? raw : 'info';
+  const profile = process.env.PROFILE ?? process.env.NODE_ENV;
+  if (profile !== 'local') {
+    return { level };
+  }
+  return { level, logDir: process.env.EXPO_LOG_DIR || defaultLogDir };
+}

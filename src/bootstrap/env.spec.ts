@@ -3,6 +3,7 @@ import {
   readInstanceEnv,
   readMetricsBind,
   readMetricsEnabled,
+  readLogEnv,
 } from './env';
 
 describe('readMetricsEnabled', () => {
@@ -124,5 +125,32 @@ describe('readMetricsBind', () => {
   it('rejects an empty METRICS_HOST', () => {
     process.env.METRICS_HOST = '  ';
     expect(() => readMetricsBind()).toThrow(/METRICS_HOST/);
+  });
+});
+
+describe('readLogEnv', () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('mirrors to a file only for the local profile', () => {
+    process.env.PROFILE = 'local';
+    delete process.env.EXPO_LOG_DIR;
+    expect(readLogEnv('/default')).toEqual({
+      level: 'info',
+      logDir: '/default',
+    });
+    process.env.EXPO_LOG_DIR = '/shared';
+    expect(readLogEnv('/default').logDir).toBe('/shared');
+    process.env.PROFILE = 'prod';
+    expect(readLogEnv('/default')).toEqual({ level: 'info' });
+  });
+
+  it('never throws on a bad LOG_LEVEL', () => {
+    process.env.LOG_LEVEL = 'DEBUG';
+    expect(readLogEnv('/d').level).toBe('debug');
+    process.env.LOG_LEVEL = 'loud';
+    expect(readLogEnv('/d').level).toBe('info');
   });
 });
