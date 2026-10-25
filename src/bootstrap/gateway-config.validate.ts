@@ -1,3 +1,4 @@
+import { isValidCidrEntry } from '../proxy/upstream-policy';
 import { isValidPublicPathEntry } from '../auth/public-path.matcher';
 import { isExactOrigin } from '../cors/cors.policy';
 import type { GatewayConfig } from './gateway-config.types';
@@ -98,6 +99,44 @@ function validateDocsAuth(docs: Record<string, unknown>): void {
     throw new InvalidGatewayConfigError(
       `docs.basicAuth.password must be a string of ${DOCS_AUTH_MIN_PASSWORD_LENGTH} to ${DOCS_AUTH_MAX_LENGTH} characters`,
     );
+  }
+}
+
+function validateUpstream(raw: unknown): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new InvalidGatewayConfigError(
+      'upstream must be an object when present',
+    );
+  }
+  const upstream = raw as Record<string, unknown>;
+  const { allowedCidrs, allowedPorts } = upstream;
+  if (
+    allowedCidrs !== undefined &&
+    (!Array.isArray(allowedCidrs) ||
+      allowedCidrs.length === 0 ||
+      !allowedCidrs.every(isValidCidrEntry))
+  ) {
+    throw new InvalidGatewayConfigError(
+      'upstream.allowedCidrs must be a non-empty array of "IP" or "IP/prefix" strings',
+    );
+  }
+  if (allowedPorts !== undefined) {
+    const ports =
+      typeof allowedPorts === 'object' && allowedPorts !== null
+        ? (allowedPorts as Record<string, unknown>)
+        : {};
+    const { min, max } = ports;
+    if (
+      !Number.isInteger(min) ||
+      !Number.isInteger(max) ||
+      (min as number) < 1 ||
+      (max as number) > 65535 ||
+      (min as number) > (max as number)
+    ) {
+      throw new InvalidGatewayConfigError(
+        'upstream.allowedPorts must be { min, max } integers within 1-65535 with min <= max',
+      );
+    }
   }
 }
 
@@ -260,6 +299,10 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     throw new InvalidGatewayConfigError(
       'trustedProxies must be an array of "IP" or "IP/prefix" strings (IPv4 /24 or narrower, IPv6 /64 or narrower, no IPv4-mapped IPv6)',
     );
+  }
+
+  if (candidate.upstream !== undefined) {
+    validateUpstream(candidate.upstream);
   }
 
   if (candidate.bff !== undefined) {
