@@ -31,6 +31,13 @@ export function readInstanceEnv() {
   };
 }
 
+/** Per-request access log (`HttpAccess`). On unless set to `false`. */
+export function readHttpAccessLogEnabled(): boolean {
+  return (
+    (process.env.HTTP_ACCESS_LOG_ENABLED ?? '').trim().toLowerCase() !== 'false'
+  );
+}
+
 export interface MetricsBind {
   host: string;
   port: number;

@@ -20,6 +20,8 @@ import {
     HttpMetricsMiddleware,
     { provide: UPSTREAM_TIMEOUT_MS, useValue: DEFAULT_UPSTREAM_TIMEOUT_MS },
   ],
+  // The access log runs in AppModule, ahead of CorsMiddleware.
+  exports: [RouteResolverService],
 })
 export class ProxyModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

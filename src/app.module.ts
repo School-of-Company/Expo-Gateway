@@ -17,6 +17,7 @@ import { DEFAULT_RATE_LIMIT } from './config/gateway-config.defaults';
 import { CorsMiddleware } from './cors/cors.middleware';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { rateLimitClientIp } from './proxy/client-ip';
+import { HttpAccessLogMiddleware } from './proxy/http-access-log.middleware';
 import { MetricsModule } from './metrics/metrics.module';
 import { ProxyModule } from './proxy/proxy.module';
 import { DocsController } from './docs/docs.controller';
@@ -153,12 +154,16 @@ import { HealthController } from './health/health.controller';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     CorsMiddleware,
+    HttpAccessLogMiddleware,
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     // Middleware runs before guards, so preflights and foreign-origin writes
-    // are settled before the throttler or JWT verification see them.
-    consumer.apply(CorsMiddleware).forRoutes('{*splat}');
+    // are settled before the throttler or JWT verification see them. The
+    // access log goes first so those CORS answers (204/403) are logged too.
+    consumer
+      .apply(HttpAccessLogMiddleware, CorsMiddleware)
+      .forRoutes('{*splat}');
   }
 }
