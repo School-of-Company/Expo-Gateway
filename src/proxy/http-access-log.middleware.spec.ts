@@ -66,7 +66,7 @@ describe('HttpAccessLogMiddleware', () => {
 
     expect(info).toHaveBeenCalledTimes(1);
     expect(info.mock.calls[0][0]).toMatch(
-      /^GET \/expo\/forms\/123 200 \d+ms -> expo-form$/,
+      /^GET \/expo\/forms\/123 status: 200 \(\d+ms\) -> expo-form$/,
     );
     expect(warn).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
@@ -86,13 +86,13 @@ describe('HttpAccessLogMiddleware', () => {
     a.run('/a', 'POST');
     a.finish(401);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toMatch(/^POST \/a 401 \d+ms/);
+    expect(warn.mock.calls[0][0]).toMatch(/^POST \/a status: 401 \(\d+ms\)/);
 
     const b = setup();
     b.run('/a');
     b.finish(502);
     expect(error).toHaveBeenCalledTimes(1);
-    expect(error.mock.calls[0][0]).toMatch(/^GET \/a 502 \d+ms/);
+    expect(error.mock.calls[0][0]).toMatch(/^GET \/a status: 502 \(\d+ms\)/);
   });
 
   it('logs 499 as ERROR when the client closes before the response finished', () => {
@@ -102,7 +102,7 @@ describe('HttpAccessLogMiddleware', () => {
     res.emit('close');
 
     expect(error).toHaveBeenCalledTimes(1);
-    expect(error.mock.calls[0][0]).toMatch(/^GET \/a 499 \d+ms/);
+    expect(error.mock.calls[0][0]).toMatch(/^GET \/a status: 499 \(\d+ms\)/);
     expect(info).not.toHaveBeenCalled();
   });
 
@@ -110,7 +110,7 @@ describe('HttpAccessLogMiddleware', () => {
     const { run, finish } = setup(() => undefined);
     run('/nope');
     finish(404);
-    expect(warn.mock.calls[0][0]).toMatch(/^GET \/nope 404 \d+ms$/);
+    expect(warn.mock.calls[0][0]).toMatch(/^GET \/nope status: 404 \(\d+ms\)$/);
   });
 
   it('never logs the query string', () => {
@@ -123,7 +123,9 @@ describe('HttpAccessLogMiddleware', () => {
     finish(200);
 
     const line = info.mock.calls[0][0] as string;
-    expect(line).toMatch(/^GET \/users\/me 200 \d+ms -> expo-user$/);
+    expect(line).toMatch(
+      /^GET \/users\/me status: 200 \(\d+ms\) -> expo-user$/,
+    );
     expect(line).not.toContain('?');
     expect(line).not.toContain('secret');
     expect(seen).toEqual(['/users/me']);

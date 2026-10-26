@@ -88,7 +88,7 @@ describe('HTTP access log (e2e)', () => {
       level: 'INFO',
     });
     expect(access[0].message).toMatch(
-      /^GET \/forms\/123 200 \d+ms -> expo-form-server$/,
+      /^GET \/forms\/123 status: 200 \(\d+ms\) -> expo-form-server$/,
     );
     expect(JSON.stringify(access[0])).not.toContain('01012345678');
   });
@@ -106,13 +106,13 @@ describe('HTTP access log (e2e)', () => {
       [
         'WARN',
         expect.stringMatching(
-          /^POST \/forms\/1 401 \d+ms -> expo-form-server$/,
+          /^POST \/forms\/1 status: 401 \(\d+ms\) -> expo-form-server$/,
         ),
       ],
       [
         'INFO',
         expect.stringMatching(
-          /^OPTIONS \/forms\/1 204 \d+ms -> expo-form-server$/,
+          /^OPTIONS \/forms\/1 status: 204 \(\d+ms\) -> expo-form-server$/,
         ),
       ],
     ]);

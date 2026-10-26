@@ -133,7 +133,8 @@ The Expo log standard, shared by every service (Spring and Nest) so the shared L
   `${EXPO_LOG_DIR:-~/.expo/logs}/expo-gateway/app.log` for the local Loki file tail. Other profiles
   write stdout only (pm2 captures it); add no log file settings there.
 - Access log: `HttpAccessLogMiddleware` (`src/proxy/http-access-log.middleware.ts`, module
-  `HttpAccess`) writes one line per request, `<METHOD> <path> <status> <ms>ms[ -> <app>]`, on
+  `HttpAccess`) writes one line per request, `<METHOD> <path> status: <code> (<ms>ms)[ -> <app>]`
+  (e.g. `GET /forms/123 status: 200 (12ms) -> expo-form-server`), on
   `finish`, or as 499 when the client leaves first (never twice). Level: INFO <400, WARN 4xx, ERROR
   5xx/499. It is registered in `AppModule` ahead of `CorsMiddleware`, so preflights, guard
   rejections and gateway 404/502/503/504 are logged too. `/health`, `/docs/**` and the

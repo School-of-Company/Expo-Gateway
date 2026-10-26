@@ -7,7 +7,7 @@ import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
 
 /**
- * One line per request: `<METHOD> <path> <status> <ms>ms[ -> <app>]`, written
+ * One line per request: `<METHOD> <path> status: <code> (<ms>ms)[ -> <app>]`, written
  * when the response finishes, or as 499 when the client leaves first — once,
  * never twice. Runs before the guards, so 401/429 are logged too.
  *
@@ -44,7 +44,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
       logged = true;
       const ms = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
       const app = this.routeResolver.resolve(path);
-      const message = `${req.method} ${path} ${status} ${ms}ms${app ? ` -> ${app}` : ''}`;
+      const message = `${req.method} ${path} status: ${status} (${ms}ms)${app ? ` -> ${app}` : ''}`;
       if (status >= 500 || status === 499) {
         this.logger.error(message);
       } else if (status >= 400) {
