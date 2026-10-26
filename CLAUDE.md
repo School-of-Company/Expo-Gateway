@@ -70,6 +70,7 @@ expo-gateway/
 
 ```
 Client → Gateway
+  HttpAccessLogMiddleware (one `HttpAccess` line when the response ends)
   CorsMiddleware (only with `cors`: preflight 204/403, foreign-Origin write 403)
   ThrottlerGuard (IP-based, 429 on exceed)
   → JwtAuthGuard (public method+path? skip : verify RS256, 401 on failure)
@@ -131,8 +132,15 @@ The Expo log standard, shared by every service (Spring and Nest) so the shared L
 - `LOG_LEVEL` (default `info`). With `PROFILE=local` stdout is also mirrored to
   `${EXPO_LOG_DIR:-~/.expo/logs}/expo-gateway/app.log` for the local Loki file tail. Other profiles
   write stdout only (pm2 captures it); add no log file settings there.
-- No request/access log: per-request data lives in metrics. Never log a JWT, key, header value, or
-  the Config Server body.
+- Access log: `HttpAccessLogMiddleware` (`src/proxy/http-access-log.middleware.ts`, module
+  `HttpAccess`) writes one line per request, `<METHOD> <path> status: <code> (<ms>ms)[ -> <app>]`
+  (e.g. `GET /forms/123 status: 200 (12ms) -> expo-form-server`), on
+  `finish`, or as 499 when the client leaves first (never twice). Level: INFO <400, WARN 4xx, ERROR
+  5xx/499. It is registered in `AppModule` ahead of `CorsMiddleware`, so preflights, guard
+  rejections and gateway 404/502/503/504 are logged too. `/health`, `/docs/**` and the
+  `docs.services[].url` fetches are skipped. `HTTP_ACCESS_LOG_ENABLED=false` turns it off
+  (default on). The path never includes the query string; add no header/cookie/body/IP fields.
+- Never log a JWT, key, header value, query string, or the Config Server body.
 
 ---
 
@@ -151,13 +159,13 @@ The Expo log standard, shared by every service (Spring and Nest) so the shared L
 
 ## Agent Routing
 
-| Task | Agent |
-|------|-------|
-| Add new feature | `feature-agent` |
-| Fix a bug | `fix-agent` |
-| Write tests | `test-agent` |
-| Code review | `review-agent` |
-| Write PR description | `pr-agent` |
+| Task                  | Agent            |
+| --------------------- | ---------------- |
+| Add new feature       | `feature-agent`  |
+| Fix a bug             | `fix-agent`      |
+| Write tests           | `test-agent`     |
+| Code review           | `review-agent`   |
+| Write PR description  | `pr-agent`       |
 | Apply review feedback | `feedback-agent` |
 
 ---

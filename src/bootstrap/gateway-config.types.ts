@@ -1,3 +1,5 @@
+import type { UpstreamPolicyConfig } from '../proxy/upstream-policy';
+
 export interface RoutingConfig {
   prefixes: Record<string, string>;
 }
@@ -55,6 +57,8 @@ export interface GatewayConfig {
   trustedProxies?: string[];
   /** Expo-Client BFF trust. See `proxy/client-ip.ts`. */
   bff?: BffConfig;
+  /** Which Eureka-reported instances may receive traffic. See `proxy/upstream-policy.ts`. */
+  upstream?: UpstreamPolicyConfig;
 }
 
 export interface BffConfig {

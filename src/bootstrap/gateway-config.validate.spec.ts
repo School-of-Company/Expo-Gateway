@@ -401,4 +401,39 @@ describe('parseGatewayConfig', () => {
       );
     });
   });
+
+  describe('upstream', () => {
+    it('accepts allowedCidrs and allowedPorts', () => {
+      expect(() =>
+        parseGatewayConfig({
+          ...valid,
+          upstream: {
+            allowedCidrs: ['10.0.0.0/8', '2001:db8::/32', '192.168.1.5'],
+            allowedPorts: { min: 8000, max: 8999 },
+          },
+        }),
+      ).not.toThrow();
+    });
+
+    it.each([
+      [{ allowedCidrs: [] }],
+      [{ allowedCidrs: ['10.0.0.0/33'] }],
+      [{ allowedCidrs: ['internal.example'] }],
+      [{ allowedCidrs: 'ten' }],
+      [{ allowedPorts: { min: 9000, max: 8000 } }],
+      [{ allowedPorts: { min: 0, max: 80 } }],
+      [{ allowedPorts: { min: 1, max: 70000 } }],
+      [{ allowedPorts: { min: '1', max: 80 } }],
+    ])('rejects %j', (upstream) => {
+      expect(() => parseGatewayConfig({ ...valid, upstream })).toThrow(
+        InvalidGatewayConfigError,
+      );
+    });
+
+    it('rejects a non-object upstream', () => {
+      expect(() => parseGatewayConfig({ ...valid, upstream: [] })).toThrow(
+        InvalidGatewayConfigError,
+      );
+    });
+  });
 });
