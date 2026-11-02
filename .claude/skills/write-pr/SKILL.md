@@ -1,81 +1,91 @@
-# Write PR
+---
+name: write-pr
+description: Generate PR title, body, and labels from commits since the base branch, then create the PR on GitHub. Handles base branch detection, label selection, and PR creation end-to-end.
+allowed-tools: Bash(git *:*), Bash(gh *:*), Bash(bash *create-pr.sh:*), Bash(cat *:*), Bash(rm PR_BODY.md:*), AskUserQuestion, Read, Write
+---
 
-PRs target `develop` (the integration branch), not `main`. `main` only moves via a separate,
-manual `develop` → `main` release PR — not something this skill drives.
+## Step 1 — Find the Base Branch
 
-## Steps
-
-1. `git fetch origin develop` — update local tracking branch.
-2. `git log origin/develop..HEAD --oneline` — list commits.
-3. `git diff origin/develop...HEAD --stat` — changed file stats.
-4. `git diff origin/develop...HEAD` — full diff.
-5. Propose 3 Korean PR title candidates and ask the user to pick one.
-6. Wait for the user to select a title.
-7. Write the PR body to `/tmp/pr_body.md`, filling in `.github/PULL_REQUEST_TEMPLATE.md`'s sections, in Korean.
-8. Run `gh pr create` with `--body-file /tmp/pr_body.md`.
-
-## PR Title Format
-
-- Korean only. No type prefix (`feat:`, `chore:`, etc.).
-- Concise, present-tense description of what this PR does.
-- Max 50 characters.
-
-Example candidates:
-```
-1. Eureka 기반 동적 라우팅 및 JWT 검증 게이트웨이 구현
-2. Config Server 부트스트랩 연동 및 rate limiting 추가
-3. 프록시 에러 처리(503/502) 및 e2e 테스트 보강
-```
-
-## PR Body Format
-
-Fill in `.github/PULL_REQUEST_TEMPLATE.md`'s sections, in Korean:
-
-- **💡 배경 및 개요**: 문제상황, 배경
-- **📃 작업내용**: 이 PR에서 한 작업
-- **🙋‍♂️ 리뷰노트**: 고민했던 점, 의도, 리뷰어에게 집중을 요청할 부분
-- **✅ PR 체크리스트**: 실제로 확인한 항목만 체크
-- **🎸 기타**: 그 외 참고사항 (다른 레포에 필요한 후속 작업 등)
-
-## Creating the PR
-
-Write body to a temp file, then create the PR:
+Don't assume `develop` or `main` — ask the repo, since projects here use both.
 
 ```bash
-cat > /tmp/pr_body.md << 'BODY'
-## 💡 배경 및 개요
-
-...
-
-Resolves: #{이슈번호}
-
-## 📃 작업내용
-
-...
-
-## 🙋‍♂️ 리뷰노트
-
-...
-
-## ✅ PR 체크리스트
-
-- [ ] 이 작업으로 인해 변경이 필요한 문서가 변경되었나요?
-- [ ] 이 작업을 하고나서 공유해야할 팀원들에게 공유되었나요?
-- [ ] 작업한 코드가 정상적으로 동작하나요? (`npm test`, `npm run test:e2e`)
-- [ ] Merge 대상 브랜치가 올바른가요?
-- [ ] PR과 관련 없는 작업이 있지는 않나요?
-
-## 🎸 기타
-BODY
-
-gh pr create --title "<선택한 제목>" --body-file /tmp/pr_body.md --base develop --assignee @me
+git branch --show-current
+gh repo view --json defaultBranchRef -q .defaultBranchRef.name
+git ls-remote --heads origin develop development dev | sed 's#.*refs/heads/##'
 ```
 
-## Rules
+`BASE` is the integration branch if the remote has one, otherwise the default branch. Use it everywhere
+below.
 
-- Do not include anything not in the diff.
-- Only check items you have actually verified.
-- Always propose 3 Korean title candidates and wait for user selection before creating the PR.
-- Branch must be pushed before running `gh pr create`.
-- Always pass `--base develop` explicitly — do not rely on the repo's default branch.
-- Always use `--body-file` (never inline heredoc) to avoid hook parse errors.
+## Step 2 — Gather Context
+
+```bash
+git fetch origin "$BASE" --quiet 2>/dev/null || true
+git log "origin/$BASE..HEAD" --oneline
+git diff "origin/$BASE...HEAD" --stat
+git diff "origin/$BASE...HEAD"
+cat .github/PULL_REQUEST_TEMPLATE.md 2>/dev/null
+```
+
+## Step 3 — Learn This Project's Scope Vocabulary
+
+Read `.claude/shared/commit-conventions.md` — it holds the commands for reading the repo's existing
+scope vocabulary, the fallback for deriving one from the changed paths, and the title format. It ships
+with this skill, so it is always present.
+
+## Step 4 — Determine Labels
+
+Labels differ per repo, so read the repo's own set and match against it:
+
+```bash
+gh label list --limit 100
+```
+
+Pick **1–2** by meaning, using `${CLAUDE_SKILL_DIR}/references/labels.md` as the mapping guide. If nothing
+matches, attach none — a wrong label is worse than no label, and an undefined one fails PR creation.
+
+## Step 5 — Generate PR Content
+
+**Title** — Generate 3 options in the format `[scope] description`:
+
+- Scope: from Step 3. Lowercase, in brackets — `[member]`, `[expo]`, `[global]`
+- Description: Korean, concise, no emojis, max 50 characters total
+- Wrap class names, method names, annotations, file names, and technical terms in backticks (e.g., `@Transactional`, `MemberService`, `SKILL.md`)
+
+**Body** — Follow the `.github/PULL_REQUEST_TEMPLATE.md` structure:
+
+- Korean 합쇼체: `~하였습니다`, `~되었습니다`, `~추가하였습니다`
+- No emojis
+- Max 2500 characters
+- Wrap all proper nouns and technical identifiers in backticks: class names, method names, annotations, file names, field names, config keys, module names, and agent names.
+
+## Step 6 — Write Body & Show Preview
+
+Write the body to `PR_BODY.md`, then display:
+
+```
+## PR 제목 후보
+1. [title1]
+2. [title2]
+3. [title3]
+
+## 선택된 라벨
+- label1, label2
+
+## PR 본문 미리보기
+[body content]
+```
+
+Use AskUserQuestion to ask the user which title to use (present options 1/2/3). Wait for the answer before proceeding.
+
+## Step 7 — Create PR
+
+Run the creation script with the confirmed title and labels (it resolves the base branch the same way
+and silently drops labels this repo doesn't define):
+
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/create-pr.sh" "<confirmed-title>" "PR_BODY.md" "<label1>,<label2>"
+```
+
+After creation, display the PR URL.
+Cleanup: remove `PR_BODY.md`.
