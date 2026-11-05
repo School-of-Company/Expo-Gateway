@@ -1,4 +1,12 @@
-import { All, Controller, Inject, Next, Req, Res } from '@nestjs/common';
+import {
+  All,
+  Controller,
+  Inject,
+  Next,
+  OnModuleDestroy,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { GatewayConfigService } from '../config/gateway-config.service';
@@ -11,6 +19,7 @@ import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
 import { LoadBalancerService } from './load-balancer.service';
 import { EurekaLookupError, NoHealthyInstanceError } from './proxy.errors';
+import { createUpstreamAgent } from './upstream-agent';
 import { UPSTREAM_TIMEOUT_MS } from './upstream-timeout';
 
 interface ProxyContext {
@@ -21,14 +30,17 @@ interface ProxyContext {
 }
 
 @Controller()
-export class ProxyController {
+export class ProxyController implements OnModuleDestroy {
   // One long-lived proxy: http-proxy-middleware registers a `close` listener
   // on the HTTP server per instance, so creating one per request leaks
   // listeners and memory. Per-request state is handed over via this map.
   private readonly contexts = new WeakMap<object, ProxyContext>();
 
+  private readonly upstreamAgent = createUpstreamAgent();
+
   private readonly proxy = createProxyMiddleware({
     changeOrigin: true,
+    agent: this.upstreamAgent,
     router: (req) => {
       const context = this.contexts.get(req);
       if (!context) {
@@ -98,6 +110,12 @@ export class ProxyController {
     private readonly gatewayConfig: GatewayConfigService,
     @Inject(UPSTREAM_TIMEOUT_MS) private readonly upstreamTimeoutMs: number,
   ) {}
+
+  onModuleDestroy(): void {
+    // Idle keep-alive sockets are unref'd, but closing them lets the backend
+    // see a clean FIN instead of a reset when the gateway exits.
+    this.upstreamAgent.destroy();
+  }
 
   // Express 5 (path-to-regexp v8) rejects the bare '*' wildcard used in
   // older examples — '/{*splat}' is the equivalent that also matches '/'.
