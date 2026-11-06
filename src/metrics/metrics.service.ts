@@ -100,6 +100,34 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  private readonly connectFailures = new Counter({
+    name: 'gateway_upstream_connect_failures_total',
+    help: 'Connections to an upstream instance that could not be opened (reason: refused, timeout, unreachable)',
+    labelNames: ['app', 'reason'],
+    registers: [this.registry],
+  });
+
+  private readonly quarantines = new Counter({
+    name: 'gateway_upstream_quarantines_total',
+    help: 'Times an instance was excluded from load balancing after a connection failure',
+    labelNames: ['app'],
+    registers: [this.registry],
+  });
+
+  private readonly quarantinedInstances = new Gauge({
+    name: 'gateway_upstream_quarantined_instances',
+    help: 'Instances currently excluded from load balancing after a connection failure (updated per request)',
+    labelNames: ['app'],
+    registers: [this.registry],
+  });
+
+  private readonly upstreamRetries = new Counter({
+    name: 'gateway_upstream_retries_total',
+    help: 'Requests sent to another instance after the first one could not be connected to',
+    labelNames: ['app'],
+    registers: [this.registry],
+  });
+
   constructor() {
     collectDefaultMetrics({ register: this.registry });
   }
@@ -147,6 +175,22 @@ export class MetricsService {
 
   recordRejectedInstances(app: string, count: number): void {
     this.rejectedInstances.inc({ app }, count);
+  }
+
+  recordConnectFailure(app: string, reason: string): void {
+    this.connectFailures.inc({ app, reason });
+  }
+
+  recordQuarantine(app: string): void {
+    this.quarantines.inc({ app });
+  }
+
+  setQuarantinedInstances(app: string, count: number): void {
+    this.quarantinedInstances.set({ app }, count);
+  }
+
+  recordUpstreamRetry(app: string): void {
+    this.upstreamRetries.inc({ app });
   }
 
   get contentType(): string {

@@ -1,5 +1,6 @@
 import type { GatewayConfigService } from '../config/gateway-config.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { InstanceQuarantine } from './instance-quarantine';
 import { LoadBalancerService } from './load-balancer.service';
 import type { UpstreamPolicyConfig } from './upstream-policy';
 import { EurekaLookupError, NoHealthyInstanceError } from './proxy.errors';
@@ -237,5 +238,91 @@ describe('LoadBalancerService', () => {
         NoHealthyInstanceError,
       );
     });
+  });
+});
+
+describe('LoadBalancerService passive health check', () => {
+  const instances = [
+    instance({ ipAddr: '10.0.0.1', port: 1 }),
+    instance({ ipAddr: '10.0.0.2', port: 2 }),
+  ];
+  let now: number;
+  let metrics: MetricsService;
+  let lb: LoadBalancerService;
+
+  beforeEach(() => {
+    now = 0;
+    metrics = new MetricsService();
+    const eureka = {
+      getInstances: jest.fn().mockResolvedValue(instances),
+    } as unknown as EurekaService;
+    lb = new LoadBalancerService(
+      eureka,
+      metrics,
+      config(),
+      new InstanceQuarantine(10_000, () => now),
+    );
+  });
+
+  it('skips an instance that refused a connection until the quarantine runs out', async () => {
+    lb.reportConnectFailure('app', 'http://10.0.0.1:1', 'refused');
+
+    const picks: string[] = [];
+    for (let i = 0; i < 4; i++) picks.push(await lb.pickInstanceUrl('app'));
+    expect(new Set(picks)).toEqual(new Set(['http://10.0.0.2:2']));
+
+    now = 10_000;
+    const after = [
+      await lb.pickInstanceUrl('app'),
+      await lb.pickInstanceUrl('app'),
+    ];
+    expect(new Set(after)).toEqual(
+      new Set(['http://10.0.0.1:1', 'http://10.0.0.2:2']),
+    );
+  });
+
+  it('tries every instance when all of them are quarantined (fail-open)', async () => {
+    lb.reportConnectFailure('app', 'http://10.0.0.1:1', 'refused');
+    lb.reportConnectFailure('app', 'http://10.0.0.2:2', 'timeout');
+
+    const picks = [
+      await lb.pickInstanceUrl('app'),
+      await lb.pickInstanceUrl('app'),
+    ];
+    expect(new Set(picks)).toEqual(
+      new Set(['http://10.0.0.1:1', 'http://10.0.0.2:2']),
+    );
+  });
+
+  it('picks a different instance for a retry, or none when there is no other', async () => {
+    expect(await lb.pickRetryUrl('app', 'http://10.0.0.1:1')).toBe(
+      'http://10.0.0.2:2',
+    );
+
+    const single = new LoadBalancerService(
+      {
+        getInstances: jest.fn().mockResolvedValue([instances[0]]),
+      } as unknown as EurekaService,
+      metrics,
+      config(),
+    );
+    expect(
+      await single.pickRetryUrl('app', 'http://10.0.0.1:1'),
+    ).toBeUndefined();
+  });
+
+  it('records failures, quarantine events and the quarantined count', async () => {
+    lb.reportConnectFailure('app', 'http://10.0.0.1:1', 'refused');
+    lb.reportConnectFailure('app', 'http://10.0.0.1:1', 'refused');
+    await lb.pickInstanceUrl('app');
+
+    const text = await metrics.render();
+    expect(text).toContain(
+      'gateway_upstream_connect_failures_total{app="app",reason="refused"} 2',
+    );
+    expect(text).toContain('gateway_upstream_quarantines_total{app="app"} 1');
+    expect(text).toContain(
+      'gateway_upstream_quarantined_instances{app="app"} 1',
+    );
   });
 });

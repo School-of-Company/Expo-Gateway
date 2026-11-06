@@ -1,12 +1,15 @@
 import { All, Controller, Inject, Next, Req, Res } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import type { ClientRequest } from 'node:http';
 import { GatewayConfigService } from '../config/gateway-config.service';
 import { stripUpstreamCorsHeaders } from '../cors/cors.policy';
 import { isDocsPath } from '../docs/docs.paths';
 import { MetricsService } from '../metrics/metrics.service';
 import { INTERNAL_TOKEN_HEADER, isBlockedPath } from './blocked-paths';
 import { BFF_TOKEN_HEADER } from './client-ip';
+import { connectFailureReason } from './connect-failure';
+import { UPSTREAM_CONNECT_TIMEOUT_MS } from './upstream-timeout';
 import { isGatewayOwnedPath } from './gateway-owned-paths';
 import { RouteResolverService } from './route-resolver.service';
 import { LoadBalancerService } from './load-balancer.service';
@@ -18,6 +21,24 @@ interface ProxyContext {
   app: string;
   startedAt: bigint;
   timedOut?: boolean;
+  // Per attempt: reset when the request is retried on another instance.
+  connected: boolean;
+  connectTimedOut: boolean;
+  retried: boolean;
+  next: NextFunction;
+}
+
+/**
+ * Only a request without a body is retried: http-proxy pipes the incoming
+ * stream into the upstream request, so a body is already consumed by the
+ * failed attempt and cannot be sent again without buffering every upload.
+ */
+function hasNoBody(req: Request): boolean {
+  const length = req.headers['content-length'];
+  return (
+    req.headers['transfer-encoding'] === undefined &&
+    (length === undefined || length === '0')
+  );
 }
 
 @Controller()
@@ -38,6 +59,7 @@ export class ProxyController {
     },
     on: {
       proxyReq: (proxyReq, req, res) => {
+        this.armConnectTimeout(proxyReq, req);
         // Set here rather than via `proxyTimeout` so the abort can be told
         // apart from an upstream reset and answered 504 instead of 502.
         // Armed only once the client body is in: a client stalling its own
@@ -73,8 +95,34 @@ export class ProxyController {
           this.metrics.observeUpstream(context.app, seconds);
         }
       },
-      error: (_err, req, res) => {
-        const timedOut = this.contexts.get(req)?.timedOut === true;
+      error: (err, req, res) => {
+        const context = this.contexts.get(req);
+        const reason = context && connectFailureReason(err, context);
+        if (context && reason) {
+          this.loadBalancer.reportConnectFailure(
+            context.app,
+            context.target,
+            reason,
+          );
+          // The instance never got a byte, so trying another one cannot run
+          // the request twice — whatever the method.
+          if (
+            !context.retried &&
+            'headersSent' in res &&
+            !res.headersSent &&
+            hasNoBody(req as Request)
+          ) {
+            context.retried = true;
+            void this.retryElsewhere(req as Request, res as Response, context);
+            return;
+          }
+        }
+        // A connection that could not be opened (refused, unreachable, or
+        // the connect timeout) stays 502 like before, not 504: nothing was
+        // waited on upstream, and GatewayUpstream502Rate keeps covering a
+        // crashed process and a vanished host alike. 503 stays reserved for
+        // "Eureka has no instance".
+        const timedOut = context?.timedOut === true;
         if ('writeHead' in res && !res.headersSent) {
           res.writeHead(timedOut ? 504 : 502, {
             'Content-Type': 'application/json',
@@ -96,6 +144,8 @@ export class ProxyController {
     private readonly loadBalancer: LoadBalancerService,
     private readonly metrics: MetricsService,
     private readonly gatewayConfig: GatewayConfigService,
+    @Inject(UPSTREAM_CONNECT_TIMEOUT_MS)
+    private readonly connectTimeoutMs: number,
     @Inject(UPSTREAM_TIMEOUT_MS) private readonly upstreamTimeoutMs: number,
   ) {}
 
@@ -151,7 +201,66 @@ export class ProxyController {
       target: targetUrl,
       app: appName,
       startedAt: process.hrtime.bigint(),
+      connected: false,
+      connectTimedOut: false,
+      retried: false,
+      next,
     });
     await this.proxy(req, res, next);
+  }
+
+  /**
+   * Bounds the TCP connect of a new socket. A pooled socket that is already
+   * connected is left alone. The idle timeout set in `proxyReq` only starts
+   * once the socket connects, so without this a host that drops SYNs holds
+   * the request until the client gives up.
+   */
+  private armConnectTimeout(proxyReq: ClientRequest, req: object): void {
+    // http-proxy emits `proxyReq` from the request's own `socket` event, so
+    // the socket is already assigned here (and listening for `socket` would
+    // be too late).
+    const socket = proxyReq.socket;
+    const context = this.contexts.get(req);
+    if (!socket || !context) return;
+    if (!socket.connecting) {
+      context.connected = true;
+      return;
+    }
+    const timer = setTimeout(() => {
+      context.connectTimedOut = true;
+      proxyReq.destroy(new Error('upstream connect timeout'));
+    }, this.connectTimeoutMs);
+    const clear = () => clearTimeout(timer);
+    socket.once('connect', () => {
+      clear();
+      context.connected = true;
+    });
+    socket.once('close', clear);
+  }
+
+  private async retryElsewhere(
+    req: Request,
+    res: Response,
+    context: ProxyContext,
+  ): Promise<void> {
+    let target: string | undefined;
+    try {
+      target = await this.loadBalancer.pickRetryUrl(
+        context.app,
+        context.target,
+      );
+    } catch {
+      target = undefined; // Eureka failed now: answer as the first attempt would
+    }
+    if (req.socket.destroyed || res.headersSent) return;
+    if (!target) {
+      res.status(502).json({ message: 'Bad Gateway' });
+      return;
+    }
+    this.metrics.recordUpstreamRetry(context.app);
+    context.target = target;
+    context.connected = false;
+    context.connectTimedOut = false;
+    await this.proxy(req, res, context.next);
   }
 }

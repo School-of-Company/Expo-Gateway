@@ -14,12 +14,16 @@ import {
 } from '../../src/bootstrap/gateway-config-holder';
 import type { GatewayConfig } from '../../src/bootstrap/gateway-config.types';
 import { trustProxy } from '../../src/bootstrap/trust-proxy';
-import { UPSTREAM_TIMEOUT_MS } from '../../src/proxy/upstream-timeout';
+import {
+  UPSTREAM_CONNECT_TIMEOUT_MS,
+  UPSTREAM_TIMEOUT_MS,
+} from '../../src/proxy/upstream-timeout';
 
 export interface TestAppOptions {
   gatewayConfig: GatewayConfig;
   eurekaInstances?: EurekaInstance[] | (() => Promise<EurekaInstance[]>);
   upstreamTimeoutMs?: number;
+  upstreamConnectTimeoutMs?: number;
 }
 
 export async function createTestApp(
@@ -45,6 +49,11 @@ export async function createTestApp(
     builder = builder
       .overrideProvider(UPSTREAM_TIMEOUT_MS)
       .useValue(options.upstreamTimeoutMs);
+  }
+  if (options.upstreamConnectTimeoutMs !== undefined) {
+    builder = builder
+      .overrideProvider(UPSTREAM_CONNECT_TIMEOUT_MS)
+      .useValue(options.upstreamConnectTimeoutMs);
   }
   const moduleRef = await builder.compile();
 
