@@ -6,7 +6,9 @@ import { ProxyController } from './proxy.controller';
 import { RouteResolverService } from './route-resolver.service';
 import { UpstreamHealthPoller } from './upstream-health.poller';
 import {
+  DEFAULT_UPSTREAM_CONNECT_TIMEOUT_MS,
   DEFAULT_UPSTREAM_TIMEOUT_MS,
+  UPSTREAM_CONNECT_TIMEOUT_MS,
   UPSTREAM_TIMEOUT_MS,
 } from './upstream-timeout';
 
@@ -19,6 +21,10 @@ import {
     UpstreamHealthPoller,
     HttpMetricsMiddleware,
     { provide: UPSTREAM_TIMEOUT_MS, useValue: DEFAULT_UPSTREAM_TIMEOUT_MS },
+    {
+      provide: UPSTREAM_CONNECT_TIMEOUT_MS,
+      useValue: DEFAULT_UPSTREAM_CONNECT_TIMEOUT_MS,
+    },
   ],
   // The access log runs in AppModule, ahead of CorsMiddleware.
   exports: [RouteResolverService],

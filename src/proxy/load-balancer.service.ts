@@ -1,11 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   EurekaService,
   type EurekaInstance,
 } from '@school-of-company/nestjs-eureka';
 import { GatewayConfigService } from '../config/gateway-config.service';
 import { MetricsService } from '../metrics/metrics.service';
+import type { ConnectFailureReason } from './connect-failure';
 import { healthyInstances } from './healthy-instances';
+import { InstanceQuarantine } from './instance-quarantine';
 import { EurekaLookupError, NoHealthyInstanceError } from './proxy.errors';
 import { compileUpstreamPolicy, type UpstreamPolicy } from './upstream-policy';
 
@@ -23,16 +25,59 @@ export class LoadBalancerService {
     private readonly eureka: EurekaService,
     private readonly metrics: MetricsService,
     gatewayConfig: GatewayConfigService,
+    // Not a provider: Nest passes undefined, so the default is used. Tests
+    // hand in one with a fake clock.
+    @Optional() private readonly quarantine = new InstanceQuarantine(),
   ) {
     this.policy = compileUpstreamPolicy(gatewayConfig.getUpstream());
   }
 
   /**
-   * Resolves one healthy instance URL for `appName` via round-robin.
-   * No retry against a different instance and no caching — a fresh
-   * `getInstances()` call every time, per the org's fail-fast philosophy.
+   * Resolves one healthy instance URL for `appName` via round-robin. No
+   * caching — a fresh `getInstances()` call every time, per the org's
+   * fail-fast philosophy. Instances that recently refused or timed out a
+   * connection are skipped, unless that would leave none (see `reachable`).
    */
   async pickInstanceUrl(appName: string): Promise<string> {
+    const urls = await this.candidateUrls(appName);
+    const cursor = this.cursors.get(appName) ?? 0;
+    this.cursors.set(appName, cursor + 1);
+    return urls[cursor % urls.length];
+  }
+
+  /**
+   * Another instance than `failedUrl` for the one retry after a connection
+   * failure, or undefined when there is none left to try.
+   */
+  async pickRetryUrl(
+    appName: string,
+    failedUrl: string,
+  ): Promise<string | undefined> {
+    const urls = (await this.candidateUrls(appName)).filter(
+      (url) => url !== failedUrl,
+    );
+    if (urls.length === 0) return undefined;
+    const cursor = this.cursors.get(appName) ?? 0;
+    this.cursors.set(appName, cursor + 1);
+    return urls[cursor % urls.length];
+  }
+
+  /** Called by the proxy when a connection to `url` could not be opened. */
+  reportConnectFailure(
+    appName: string,
+    url: string,
+    reason: ConnectFailureReason,
+  ): void {
+    this.metrics.recordConnectFailure(appName, reason);
+    if (this.quarantine.add(appName, url)) {
+      this.metrics.recordQuarantine(appName);
+      this.logger.warn(
+        `Excluding ${appName} instance ${url} for a while: connection ${reason}`,
+      );
+    }
+  }
+
+  private async candidateUrls(appName: string): Promise<string[]> {
     const startedAt = process.hrtime.bigint();
     let instances: EurekaInstance[];
     try {
@@ -48,11 +93,23 @@ export class LoadBalancerService {
       throw new NoHealthyInstanceError(appName);
     }
 
-    const cursor = this.cursors.get(appName) ?? 0;
-    const chosen = healthy[cursor % healthy.length];
-    this.cursors.set(appName, cursor + 1);
+    return this.reachable(
+      appName,
+      healthy.map((i) => `http://${i.ipAddr}:${i.port}`),
+    );
+  }
 
-    return `http://${chosen.ipAddr}:${chosen.port}`;
+  /**
+   * Drops quarantined instances. When every instance is quarantined all of
+   * them are tried anyway (fail-open, like Envoy's panic threshold): turning a
+   * single-instance blip into QUARANTINE_MS of guaranteed 503s would be worse
+   * than letting each request find out, which the connect timeout keeps short.
+   */
+  private reachable(appName: string, urls: string[]): string[] {
+    const out = this.quarantine.quarantined(appName, urls);
+    this.metrics.setQuarantinedInstances(appName, out.size);
+    if (out.size === 0 || out.size === urls.length) return urls;
+    return urls.filter((url) => !out.has(url));
   }
 
   /**

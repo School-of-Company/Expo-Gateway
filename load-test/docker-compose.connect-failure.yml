@@ -1,0 +1,34 @@
+# Override for connect-failure-bench.mjs (#105): the gateway image is picked per
+# run (GW_IMAGE, Before/After), everything else runs from BENCH_APP_IMAGE, and a
+# second svc-a instance (backend-a2) exists for the "one of two dies" case.
+# Prometheus and Grafana are not needed: numbers come from k6 and the gateway's
+# own /metrics.
+x-bench-image: &bench-image
+  image: ${BENCH_APP_IMAGE:-bench-gw-app:local}
+
+services:
+  eureka-stub: *bench-image
+  config: *bench-image
+  backend-a: *bench-image
+  backend-b: *bench-image
+  backend-c: *bench-image
+  backend-a2:
+    <<: *bench-image
+    pull_policy: never
+    restart: "no"
+    container_name: bench-gw-backend-a2
+    command:
+      - sh
+      - -c
+      - node load-test/.tmp/stub-backend/main.js & echo $$! > /tmp/node.pid; wait; exec sleep infinity
+    environment:
+      EUREKA_URL: http://eureka:8761/eureka
+      PORT: "4000"
+      LATENCY_MS: ${BACKEND_LATENCY_MS:-20}
+      JITTER_MS: ${BACKEND_JITTER_MS:-10}
+      HEARTBEAT_SECONDS: ${HEARTBEAT_SECONDS:-30}
+      LEASE_SECONDS: ${LEASE_SECONDS:-90}
+      APP_NAME: svc-a
+      HOST_NAME: backend-a2
+  gateway:
+    image: ${GW_IMAGE:-bench-gw-app:local}
